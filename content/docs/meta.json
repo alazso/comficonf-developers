@@ -1,0 +1,19 @@
+{
+  "title": "ComfiConf for developers",
+  "pages": [
+    "index",
+    "quickstart",
+    "concepts",
+    "schema",
+    "providers",
+    "persistence",
+    "testing",
+    "demo-plugin",
+    "---Reference---",
+    "api-reference",
+    "compatibility",
+    "troubleshooting",
+    "checklist",
+    "license"
+  ]
+}

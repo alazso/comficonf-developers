@@ -1,0 +1,66 @@
+---
+title: Testing
+description: Unit test providers without a server, guard the optional hook, and check the integration on a test server.
+---
+
+The API is plain Java, so providers can be unit tested without a server. The demo's tests in
+`examples/demo-plugin/src/test` show the patterns.
+
+## Unit tests without a server
+
+- **Use a temporary directory** (`@TempDir`) with a copy of your default `config.yml`, and construct your provider
+  directly. Bukkit's `YamlConfiguration` works in plain unit tests.
+- **Implement `ApplyContext` in a few lines** for tests, with `callSync` running the task inline:
+
+```java title="TestApplyContext.java"
+@Override
+public <T> T callSync(Callable<T> task) throws Exception {
+    return task.call();
+}
+```
+
+- **Build your schema in a test** (`describe()`), so `SchemaException`s show up at build time.
+
+## Test the contract, not just the happy path
+
+| Check | Expected |
+| --- | --- |
+| `read()` | Returns the SHA-256 of the file bytes, and a different revision after an external edit. |
+| Stale `baseRevision` | Returns `CONFLICT` and leaves the file and backups untouched. |
+| Undeclared data | `apply` keeps unknown keys, comments and per-item data. |
+| Numbers | Numbers stay numbers. |
+| Order | Item order follows the proposal. |
+| Restart-only changes | Return `SAVED_RESTART_REQUIRED` and do not change the active value. |
+| Failing live reload | Never returns `APPLIED`. |
+| Round trip | `apply(read())` with unchanged values produces a file that reads back to the same values. |
+
+## Guard the optional hook
+
+Guard the optional hook with a bytecode scan of your compiled classes. The demo's `NoApiReferenceTest` makes sure
+no class outside `com.comficonf.demo.integration` mentions `com/comficonf/api`:
+
+```java title="NoApiReferenceTest.java"
+Path classes = Path.of(MyPlugin.class.getProtectionDomain().getCodeSource().getLocation().toURI());
+try (Stream<Path> walk = Files.walk(classes)) {
+    for (Path file : walk.filter(p -> p.toString().endsWith(".class")).toList()) {
+        String relative = classes.relativize(file).toString().replace('\\', '/');
+        if (!relative.startsWith("com/example/myplugin/comficonf/")) {
+            assertThat(new String(Files.readAllBytes(file), StandardCharsets.ISO_8859_1))
+                    .as(relative).doesNotContain("com/comficonf/api");
+        }
+    }
+}
+```
+
+## On a test server
+
+1. Install your plugin and the ComfiConf bridge on a Paper server, start it, and pair it with an account at
+   [app.comficonf.com](https://app.comficonf.com).
+2. Run the bridge with `debug: true` in `plugins/ComfiConf/config.yml` to log every message type and request id
+   (never values).
+3. Use `/comficonf status` to check the connection and `/comficonf plugins` to check that your resource is
+   registered with the expected id and display name.
+4. In the editor, change values of every field type, review, apply, and check the file and the active
+   configuration after each outcome: applied, a restart-only change, a value your `validate` rejects, and a conflict
+   after a manual edit of the file.
+5. Start the server without the bridge and check that your plugin still loads and works.

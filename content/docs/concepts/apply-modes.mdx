@@ -1,0 +1,48 @@
+---
+title: Apply modes
+description: Live fields take effect when applied; restart fields are saved and take effect after a server restart.
+---
+
+Every field has an **apply mode** (`ApplyMode`): `LIVE` (the default) or `RESTART`.
+
+| Apply mode | Declared with | Meaning |
+| --- | --- | --- |
+| `LIVE` | default | The change takes effect when your `apply` activates it. |
+| `RESTART` | `restartRequired()` or `applyMode(ApplyMode.RESTART)` | The change only takes effect after a restart. |
+
+```java title="VoucherSchema.java"
+ConfigField.enumeration("storage-mode")
+        .choice("yaml", "YAML file").choice("sqlite", "SQLite database")
+        .restartRequired(),
+```
+
+## What the owner sees
+
+The editor highlights restart fields and offers a **Restart required** filter. The review lists how many changes
+need a server restart before the owner applies.
+
+## What your apply returns
+
+- `ApplyContext.requiresRestart()` tells you whether a changed field is declared `restartRequired()`, and each
+  `FieldChange` in `changes()` carries its `applyMode()`.
+- When restart-only fields changed, return `ApplyResult.savedRestartRequired(newRevision, message)`. The bridge
+  fills `restartRequired` with the changed `restartRequired()` fields when you return it without paths.
+- To name the paths that wait for a restart yourself, use `savedRestartRequired(newRevision, message, paths)`.
+- Return `SAVED_RESTART_REQUIRED` as well when the values were stored but the live reload failed, so they take
+  effect only after a restart.
+
+The demo saves a storage mode change and keeps the old storage active until the restart:
+
+```java title="VoucherConfigProvider.java"
+String proposedMode = context.proposed().getString("settings.storage-mode");
+boolean storageChanged = !proposedMode.equals(context.current().get("settings.storage-mode"));
+if (storageChanged && !proposedMode.equals(runtime.activeStorageMode())) {
+    return ApplyResult.savedRestartRequired(newRevision, "Saved. The storage mode change to '"
+            + proposedMode + "' takes effect after a restart; all other changes are active.",
+            List.of("settings.storage-mode"));
+}
+return ApplyResult.applied(newRevision);
+```
+
+A restart-only change must never return `APPLIED`, and must not change the active value; see
+[Outcomes](/concepts/outcomes).

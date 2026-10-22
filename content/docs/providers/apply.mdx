@@ -1,0 +1,127 @@
+---
+title: apply()
+description: Persist and activate the validated values, preserve what the schema does not cover, and report the truthful outcome.
+---
+
+`apply(context)` persists and activates the validated values. The demo:
+
+1. takes the runtime's update lock, so that its own `/vouchers reload` cannot swap in an older file at the same
+   time,
+2. reads the **current** file bytes and compares their revision with `context.baseRevision()` (another edit may have
+   happened since the editor loaded the values),
+3. refuses text that YAML cannot store as text (see
+   [Text that YAML cannot store](/persistence/section-mapper#text-that-yaml-cannot-store)),
+4. writes the proposed values into the parsed document with `SectionMapper.write`, keeping every key and comment the
+   schema does not cover,
+5. parses the new bytes again and checks that they read back to the proposed values; otherwise it returns `REJECTED`
+   and writes nothing,
+6. writes the new bytes with `SafeFileWriter`, which re-checks the revision under a lock, backs up the old file and
+   replaces it atomically,
+7. builds a new immutable runtime configuration **from the parsed new bytes**, so the active configuration is exactly
+   what is on disk, swaps it in atomically and releases the update lock,
+8. tells online administrators on the main thread through `context.runSync`,
+9. reports the truthful result.
+
+```java title="VoucherConfigProvider.java"
+@Override
+public ApplyResult apply(ApplyContext context) throws IOException, InvalidConfigException {
+    String newRevision;
+    runtime.updateLock().lock();
+    try {
+        byte[] current = Files.readAllBytes(configFile);
+        String currentRevision = Revisions.of(current);
+        if (!currentRevision.equals(context.baseRevision())) {
+            return ApplyResult.conflict(currentRevision);
+        }
+        ValidationResult storable = mapper.validate(context.proposed());
+        if (!storable.isValid()) {
+            return ApplyResult.rejected(storable);
+        }
+        YamlConfiguration yaml = VoucherConfigLoader.parse(current);
+        mapper.write(context.proposed(), yaml);
+        byte[] updated = yaml.saveToString().getBytes(StandardCharsets.UTF_8);
+        YamlConfiguration saved = VoucherConfigLoader.parse(updated);
+        List<String> altered;
+        try {
+            // Paths whose value in the new bytes differs from the proposal; null and missing count as equal.
+            altered = alteredPaths(context.proposed().asMap(), mapper.read(saved).asMap(), "");
+        } catch (IllegalStateException e) {
+            logger.log(Level.WARNING, "config.yml would not read back the values from ComfiConf", e);
+            altered = List.of("");
+        }
+        if (!altered.isEmpty()) {
+            ValidationResult.Builder rejection = ValidationResult.builder();
+            for (String path : altered) {
+                rejection.error(path, "config.yml cannot store this value unchanged, so nothing was saved.");
+            }
+            return ApplyResult.rejected(rejection.build());
+        }
+        try {
+            newRevision = SafeFileWriter.write(configFile, updated, context.baseRevision(), backups)
+                    .newRevision();
+        } catch (RevisionConflictException e) {
+            return ApplyResult.conflict(e.currentRevision());
+        }
+
+        VoucherConfig next;
+        try {
+            next = runtimeLoader.load(saved);
+        } catch (InvalidConfigException | RuntimeException e) {
+            logger.log(Level.WARNING, "Saved config.yml from ComfiConf, but could not activate it", e);
+            return ApplyResult.savedRestartRequired(newRevision, "The values were saved, but the plugin could"
+                    + " not load them (" + e.getMessage() + "). They take effect after a restart or a"
+                    + " successful /vouchers reload.");
+        }
+        runtime.swap(next);
+    } finally {
+        runtime.updateLock().unlock();
+    }
+    try {
+        context.runSync(() -> adminNotifier.accept("Voucher settings were updated through ComfiConf by "
+                + context.actor().label() + "."));
+    } catch (Exception e) {
+        logger.log(Level.FINE, "Could not notify online administrators", e);
+    }
+
+    String proposedMode = context.proposed().getString("settings.storage-mode");
+    boolean storageChanged = !proposedMode.equals(context.current().get("settings.storage-mode"));
+    if (storageChanged && !proposedMode.equals(runtime.activeStorageMode())) {
+        return ApplyResult.savedRestartRequired(newRevision, "Saved. The storage mode change to '"
+                + proposedMode + "' takes effect after a restart; all other changes are active.",
+                List.of("settings.storage-mode"));
+    }
+    return ApplyResult.applied(newRevision);
+}
+```
+
+## What ApplyContext gives you
+
+| Method | Content |
+| --- | --- |
+| `resourceId()`, `operationId()` | The resource and a unique id of this operation. A retried submission carries the same id; the bridge never applies it twice. |
+| `baseRevision()` | Revision the editor started from. It matched the stored revision when the operation started. |
+| `current()` | Values read at the start of the operation, including sensitive values and keys the schema does not declare. Numbers of declared `integer` and `decimal` fields are converted to the declared type the same way as for the editor (a YAML `2` in a `decimal` field becomes `2.0`), so an unchanged number equals its value in `proposed()`. Everything else is what your `read()` returned and is not checked against the schema, so compare with `get(path)` instead of typed getters such as `getString`, which throw on an unexpected type (after your file was already written). To find out which fields changed, `changes()` is the most direct source. |
+| `proposed()` | Complete validated values to persist, including unchanged and sensitive values. |
+| `changes()` | The computed differences (`FieldChange`: path, kind, apply mode, sensitive flag, item key, before, after). Never empty. |
+| `requiresRestart()` | Whether a changed field is declared `restartRequired()`. |
+| `actor()` | The account that requested the change (`id`, `label` such as an email address, meant for logs). |
+| `callSync(task)` / `runSync(task)` | Run code on the server main thread and wait for it; see [Threading](/providers/threading). |
+
+`ApplyContext` is provided by the bridge and valid only during the apply call. A `FieldChange` has the `kind`
+`MODIFIED`, `ADDED`, `REMOVED` or `REORDERED`.
+
+## Preserving what the schema does not cover
+
+The editor only knows declared fields, so `apply` must merge, not overwrite. `SectionMapper.write` does: it updates
+the declared `settings` keys in place (comments and unknown keys survive, and unchanged values keep their exact YAML
+form), and rebuilds the `vouchers` map in the proposed order by **reusing each existing voucher section** (so its
+`lore` and comments survive), dropping removed vouchers and creating sections for added ones.
+
+Numbers stay numbers: `Long` values are written back as YAML integers and `Double` values as YAML floats. Bukkit's
+`YamlConfiguration` keeps comments of keys that still exist when `parseComments` is enabled (the default). If you
+write your own mapping instead, it must do the same.
+
+## Returning the outcome
+
+Return `APPLIED` only when the values are stored **and** active. The factories and what the bridge does around
+your `apply` are on [Outcomes](/concepts/outcomes).

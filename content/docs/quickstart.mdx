@@ -1,0 +1,235 @@
+---
+title: Quickstart
+description: Add the API, declare the soft dependency, keep the integration optional, register a resource, and test it on a server.
+---
+
+<FactsStrip
+  facts={[
+    { label: 'Maven coordinates', value: 'com.comficonf:comficonf-api:COMFICONF_ARTIFACT_VERSION', wide: true },
+    { label: 'API version', value: '1 (ComfiConfApi.API_VERSION)', wide: true },
+    { label: 'Java', value: '25' },
+    { label: 'Paper', value: '26.1.2, 26.2, 26.3' },
+    { label: 'License', value: 'Apache-2.0', mono: false },
+    { label: 'Folia', value: 'Not supported', mono: false, muted: true },
+  ]}
+/>
+
+`ComfiConfApi.API_VERSION` is a fixed integer that identifies the API contract. It is not the artifact version: the
+artifact `COMFICONF_ARTIFACT_VERSION` implements API version 1.
+
+## 1. Add the dependency
+
+The API JAR has no runtime dependencies of its own. At runtime its classes come from the bridge JAR, which
+contains exactly one copy of `com.comficonf.api`. Your plugin compiles against the API and **never shades it**. A
+shaded copy creates a second set of API classes that the bridge cannot see; see
+[Troubleshooting](/troubleshooting#comficonfapiget-throws-not-installed-or-not-enabled-although-the-bridge-runs-or-a-classcastexception-mentions-comficonfapi).
+
+<Callout tone="warning" title="Not on Maven Central yet">
+  Until the API is published to a public repository, install it into your local Maven repository from a checkout
+  of the <ReleaseLink to="apiRepository">ComfiConf API repository</ReleaseLink>. This installs
+  `com.comficonf:comficonf-api:COMFICONF_ARTIFACT_VERSION` (with sources and Javadoc) into `~/.m2/repository`, which
+  is why the Gradle example lists `mavenLocal()`.
+</Callout>
+
+```sh title="Terminal"
+cd java
+./gradlew :api:publishToMavenLocal
+```
+
+```kotlin tab="Gradle (Kotlin DSL)" title="build.gradle.kts"
+plugins {
+    java
+}
+
+repositories {
+    mavenLocal()
+    mavenCentral()
+    maven("https://repo.papermc.io/repository/maven-public/")
+}
+
+dependencies {
+    compileOnly("io.papermc.paper:paper-api:26.1.2.build.74-stable")
+    // Provided by the ComfiConf bridge at runtime. compileOnly keeps it out of your JAR.
+    compileOnly("com.comficonf:comficonf-api:COMFICONF_ARTIFACT_VERSION")
+
+    // The API is needed on the test classpath to unit test your provider.
+    testImplementation("com.comficonf:comficonf-api:COMFICONF_ARTIFACT_VERSION")
+    testImplementation("io.papermc.paper:paper-api:26.1.2.build.74-stable")
+}
+
+java {
+    toolchain.languageVersion.set(JavaLanguageVersion.of(25))
+}
+```
+
+```xml tab="Maven" title="pom.xml"
+<repositories>
+  <repository>
+    <id>papermc</id>
+    <url>https://repo.papermc.io/repository/maven-public/</url>
+  </repository>
+</repositories>
+
+<dependencies>
+  <dependency>
+    <groupId>io.papermc.paper</groupId>
+    <artifactId>paper-api</artifactId>
+    <version>26.1.2.build.74-stable</version>
+    <scope>provided</scope>
+  </dependency>
+  <dependency>
+    <groupId>com.comficonf</groupId>
+    <artifactId>comficonf-api</artifactId>
+    <version>COMFICONF_ARTIFACT_VERSION</version>
+    <!-- Provided by the ComfiConf bridge at runtime; never shade it. -->
+    <scope>provided</scope>
+  </dependency>
+</dependencies>
+```
+
+- **Gradle:** if you use the Shadow plugin for other libraries, keep ComfiConf out of it: a `compileOnly`
+  dependency is never part of the shadow JAR. Do not move the API to `implementation` "to make it work"; that is
+  the shading mistake.
+- **Maven:** Maven reads `~/.m2/repository` by default, so `publishToMavenLocal` is enough. If you use the
+  `maven-shade-plugin`, `provided` dependencies are not included.
+
+## 2. Declare the soft dependency
+
+The bridge must be enabled before your plugin so that its classes and its `ComfiConfApi` service exist when your
+`onEnable` runs.
+
+```yaml tab="plugin.yml" title="plugin.yml"
+name: ComfiConfDemo
+main: com.comficonf.demo.ComfiConfDemoPlugin
+version: '0.1.0'
+api-version: '26.1'
+softdepend: [ComfiConf]
+```
+
+```yaml tab="paper-plugin.yml" title="paper-plugin.yml"
+name: ComfiConfDemo
+main: com.comficonf.demo.ComfiConfDemoPlugin
+version: '0.1.0'
+api-version: '26.1'
+dependencies:
+  server:
+    ComfiConf:
+      load: BEFORE
+      required: false
+      join-classpath: true
+```
+
+Use `depend: [ComfiConf]` instead only if your plugin cannot run without ComfiConf. For almost every plugin,
+ComfiConf is a convenience, so `softdepend` is right.
+
+Paper plugins declare the dependency with an explicit load order and must join the bridge's classpath to see the
+API classes. Paper plugins cannot declare commands in YAML; register them with `registerCommand` or the lifecycle
+API. The ComfiConf integration itself is the same for both formats.
+
+## 3. Keep the integration optional
+
+Your plugin has to start normally when the bridge is not installed. Java loads a class when it is first used, and
+loading a class that refers to a missing class fails with `NoClassDefFoundError`. So:
+
+1. The **main class must not reference any `com.comficonf.api` type**: no fields, parameters, return types, local
+   variables, casts or `catch` clauses of API types.
+2. Check `getServer().getPluginManager().isPluginEnabled("ComfiConf")` first.
+3. Only then call a separate class (here `ComfiConfIntegration`) that uses the API.
+
+The demo keeps the integration behind a small interface declared in an API-free package, so the main class can
+hold it in a field:
+
+```java title="DemoIntegration.java"
+package com.comficonf.demo;
+
+/** The plugin's view of its optional ComfiConf integration. */
+public interface DemoIntegration {
+    String resourceId();
+    boolean isRegistered();
+    void notifyChanged();
+    void close();
+}
+```
+
+```java title="ComfiConfDemoPlugin.java"
+// ComfiConfDemoPlugin.onEnable(), after loading config.yml into the runtime holder
+if (getServer().getPluginManager().isPluginEnabled("ComfiConf")) {
+    try {
+        integration = ComfiConfIntegration.register(this, runtime, configFile(), backupDirectory(),
+                this::notifyAdmins);
+        getLogger().info("Registered " + integration.resourceId() + " with ComfiConf");
+    } catch (LinkageError e) {
+        // ComfiConf is installed, but its classes do not match the API this plugin was compiled against.
+        Plugin bridge = getServer().getPluginManager().getPlugin("ComfiConf");
+        getLogger().warning(incompatibleBridgeMessage(
+                bridge == null ? "?" : bridge.getPluginMeta().getVersion(), e));
+    } catch (RuntimeException e) {
+        getLogger().log(Level.WARNING, "Could not register with ComfiConf; continuing without it", e);
+    }
+} else {
+    getLogger().info("ComfiConf is not installed; vouchers are configured through config.yml only");
+}
+
+// In the same class
+static String incompatibleBridgeMessage(String bridgeVersion, LinkageError error) {
+    String missing = error.getMessage() == null
+            ? error.getClass().getSimpleName()
+            : "missing " + error.getMessage().replace('/', '.');
+    return "The installed ComfiConf " + bridgeVersion + " does not include the ComfiConf API this plugin needs ("
+            + missing + "). Update ComfiConf to the version this plugin was built for; vouchers are configured"
+            + " through config.yml only until then.";
+}
+```
+
+```java title="ComfiConfDemoPlugin.java"
+@Override
+public void onDisable() {
+    if (integration != null) {
+        integration.close();
+        integration = null;
+    }
+}
+```
+
+`ComfiConfIntegration.register` has only plugin and JDK types in its signature, so referring to it does not load
+any API class until the call actually runs. The demo's test `NoApiReferenceTest` scans the compiled class files to
+make sure no class outside `com.comficonf.demo.integration` mentions `com/comficonf/api`; copy that test into your
+project (see [Testing](/testing#guard-the-optional-hook)).
+
+## 4. Register a resource
+
+A resource is one editable unit, usually one configuration file. Its id has the form `namespace:name`, each part 1
+to 64 characters of `[a-z0-9._-]` starting with a letter or digit. **Keep the id stable across plugin versions**:
+the website and the audit history refer to it.
+
+```java title="ComfiConfIntegration.java"
+public static DemoIntegration register(JavaPlugin plugin, VoucherRuntime runtime, Path configFile,
+        Path backupDirectory, Consumer<String> adminNotifier) {
+    ConfigResource resource = ConfigResource.builder("comficonf-demo:vouchers")
+            .displayName("Vouchers")
+            .description("Voucher rewards, cooldowns and announcements of ComfiConfDemo.")
+            .provider(new VoucherConfigProvider(configFile, backupDirectory, runtime, adminNotifier,
+                    plugin.getLogger()))
+            .callbackThread(CallbackThread.WORKER)
+            .build();
+    return new ComfiConfIntegration(ComfiConfApi.get().register(plugin, resource));
+}
+```
+
+Register in `onEnable`, not `onLoad`. The builder methods and every `ComfiConfApi` call are listed in
+[Registration](/providers/registration); the provider itself is described in [Providers](/providers).
+
+## 5. Try it on a server
+
+1. Build your plugin and put it on a Paper server together with the ComfiConf bridge
+   (<ReleaseLink to="modrinth">Modrinth</ReleaseLink> or <ReleaseLink to="hangar">Hangar</ReleaseLink>).
+2. Start the server. Your plugin logs that it registered, and `/comficonf plugins` lists your resource with its id
+   and display name.
+3. Pair the server with an account at [app.comficonf.com](https://app.comficonf.com) (`/comficonf pair`; see the
+   [user docs](https://docs.comficonf.com/getting-started/pair-your-server)) and open your plugin on the server
+   page.
+4. Change a value, review it and apply it. Check that your file changed as expected and that the change is active.
+
+On a test server, run the bridge with `debug: true` in `plugins/ComfiConf/config.yml` to log every message type and
+request id (never values), and use `/comficonf status` and `/comficonf plugins`. The
+[checklist](/checklist) lists everything to verify before you release.

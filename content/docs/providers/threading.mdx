@@ -1,0 +1,48 @@
+---
+title: Threading
+description: Where callbacks run, the WORKER and MAIN modes, callSync, and how to share state with your own commands.
+---
+
+| Rule | Detail |
+| --- | --- |
+| Network I/O never runs on the main thread. | The bridge's WebSocket, JSON work and request queue use their own daemon threads. |
+| `CallbackThread.WORKER` (default) | Callbacks run on a bridge worker thread, never on the main thread. File and database access belong here. |
+| `CallbackThread.MAIN` | Callbacks run on the server main thread through the Bukkit scheduler. For providers whose state is not thread-safe; callbacks must be fast. A callback that the main thread has not started within 10 seconds is cancelled and the request fails. |
+| One resource, one callback at a time | The bridge never overlaps two callbacks of the same resource, in either mode, and runs the callbacks of one operation back to back. |
+| Global limits | At most 4 callbacks run at once across all resources and at most 64 requests wait; beyond that the backend gets `BUSY`. Requests that waited longer than their time to live are dropped without calling you. |
+| `ApplyContext.callSync(task)` / `runSync(task)` | Runs `task` on the main thread and waits up to 10 seconds, then throws `TimeoutException` (a task that has not started by then is cancelled). On the main thread it runs inline. Use it for Bukkit API calls that require the main thread, such as messaging players, changing worlds or entities. |
+
+Choose the mode when you build the resource:
+
+```java title="ComfiConfIntegration.java"
+ConfigResource resource = ConfigResource.builder("comficonf-demo:vouchers")
+        .displayName("Vouchers")
+        .description("Voucher rewards, cooldowns and announcements of ComfiConfDemo.")
+        .provider(new VoucherConfigProvider(configFile, backupDirectory, runtime, adminNotifier,
+                plugin.getLogger()))
+        .callbackThread(CallbackThread.WORKER)
+        .build();
+```
+
+## Keep the main thread short
+
+Keep work on the main thread short: do the disk I/O and parsing on the worker thread, and only hop to the main
+thread for the final Bukkit calls. Never call `callSync` while holding a lock that main-thread code might need.
+
+```java title="VoucherConfigProvider.java"
+try {
+    context.runSync(() -> adminNotifier.accept("Voucher settings were updated through ComfiConf by "
+            + context.actor().label() + "."));
+} catch (Exception e) {
+    logger.log(Level.FINE, "Could not notify online administrators", e);
+}
+```
+
+## Sharing state with your own code
+
+Your plugin's own code (commands, `/reload` handlers) may run at the same time as a callback on a worker thread, so
+share state the way the demo does: an immutable runtime configuration in an `AtomicReference` that is swapped in one
+step. Swapping atomically is not enough on its own: a reload that read the file just before your `apply` wrote it
+could swap in the older content right after `apply` swapped in the new one. The demo's `VoucherRuntime` therefore
+holds one lock (`updateLock()`) around "read or write the file, then swap" in both `apply` and `reload`. Keep such a
+lock short and never call `callSync` while holding it: the reload command takes it on the main thread.

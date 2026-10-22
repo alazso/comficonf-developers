@@ -1,0 +1,79 @@
+---
+title: Schema reference
+description: ConfigSchema and ConfigField, the attributes every field shares, the field types, and the limits of a schema.
+---
+
+Create fields with the static factories of `ConfigField` and collect them with `ConfigSchema.of(...)` or
+`ConfigSchema.builder()`. Builders validate eagerly and throw `SchemaException` (an `IllegalArgumentException`) for
+inconsistent definitions, so a broken schema fails at `describe()` time in your own tests.
+
+```java title="VoucherSchema.java"
+ConfigSchema.of(
+        ConfigField.object("settings").label("General").fields(
+                ConfigField.string("prefix").label("Message prefix")
+                        .description("MiniMessage text shown before every voucher message.")
+                        .maxLength(64),
+                ConfigField.bool("announce-redemptions"),
+                ConfigField.stringList("announcement-channels")
+                        .choice("chat", "Chat").choice("actionbar", "Action bar").choice("title", "Title")
+                        .uniqueItems().minItems(1).ordered(false)
+                        .visibleWhen("announce-redemptions", true),
+                ConfigField.integer("max-redemptions-per-day").range(0, 100).slider(),
+                ConfigField.decimal("bonus-multiplier").range(0.0, 10.0).step(0.1).unit("x"),
+                ConfigField.enumeration("storage-mode")
+                        .choice("yaml", "YAML file").choice("sqlite", "SQLite database")
+                        .restartRequired(),
+                ConfigField.stringList("disabled-worlds")
+                        .itemPattern("[A-Za-z0-9_.-]{1,64}", "World names use letters, digits, '_', '-' and '.'."),
+                ConfigField.text("welcome-message").maxLength(500),
+                ConfigField.string("webhook-url").label("Webhook URL").optional().writeOnly()
+                        .pattern("https://.+", "Use an https:// URL.")),
+        ConfigField.objectList("vouchers").itemKey("id").itemTitle("display-name").itemLabel("voucher")
+                .minItems(1)
+                .fields(
+                        ConfigField.string("id").pattern("[a-z0-9_-]{1,32}"),
+                        ConfigField.string("display-name").length(1, 48),
+                        ConfigField.bool("enabled"),
+                        ConfigField.material("material").itemsOnly(),
+                        ConfigField.integer("cooldown-seconds").label("Cooldown").range(0, 604_800)
+                                .unit("seconds"),
+                        ConfigField.string("permission").pattern("[a-z0-9_.-]+").maxLength(64),
+                        ConfigField.integer("weight").range(1, 1000),
+                        ConfigField.enumeration("rarity")
+                                .choice("common", "Common").choice("rare", "Rare")
+                                .choice("epic", "Epic").choice("legendary", "Legendary")));
+```
+
+## Common attributes (all field types)
+
+| Builder method | Default | Effect in the editor and bridge |
+| --- | --- | --- |
+| `label(String)` | derived from the key (`cooldown-seconds` becomes "Cooldown seconds") | Field label, at most 80 characters. Labels also build change labels such as `Vouchers › Daily Reward › Cooldown`. |
+| `description(String)` | none | Help text, at most 1000 characters. |
+| `optional()` / `required(boolean)` | required | A required value must be present and not `null`; required `string`, `text`, `enum` and `material` values must also be non-empty. Required lists may be empty unless `minItems` says otherwise. Objects are always present and cannot be optional. |
+| `readOnly()` | false | Shown but not editable. A submitted value that differs from the current value is rejected (`read_only`). Applies to the whole subtree of objects and lists. Fields of an object list item that was added in the editor have no current value and are not compared; check them in `validate` if they matter. |
+| `restartRequired()` / `applyMode(ApplyMode)` | `LIVE` | Declares that changes only take effect after a restart. The editor highlights it and the bridge lists such changes in `restartRequired` when you return `savedRestartRequired` without paths. |
+| `visibleWhen(field, value)` / `visibleWhen(VisibilityCondition)` | always visible | Shows the field only while a sibling scalar, non-sensitive field matches. See [Visibility conditions](/schema/visibility). |
+
+## Keys and limits
+
+Keys are 1 to 64 characters of `[A-Za-z0-9_-]` and unique among siblings. A schema has at most 2000 fields in total
+(`ConfigSchema.MAX_FIELDS`) and at most 8 levels of nesting (`ConfigSchema.MAX_DEPTH`).
+
+## Field types
+
+| Factory | Value type (`ConfigValues`) | JSON | Editor control |
+| --- | --- | --- | --- |
+| `ConfigField.string(key)` | `String` | string | text input |
+| `ConfigField.text(key)` | `String` | string | text area |
+| `ConfigField.bool(key)` | `Boolean` | boolean | toggle |
+| `ConfigField.integer(key)` | `Long`, within ±9007199254740991 | integer | number input, slider with `slider()` |
+| `ConfigField.decimal(key)` | `Double` | number | decimal input, slider with `slider()` |
+| `ConfigField.enumeration(key)` / `enumeration(key, MyEnum.class)` | `String` (a choice value) | string | dropdown |
+| `ConfigField.stringList(key)` | `List<String>` | array of strings | multi-select with choices, tag input without |
+| `ConfigField.material(key)` | `String`, a `Material.name()` such as `DIAMOND_SWORD` | string | searchable material picker |
+| `ConfigField.object(key)` | `Map` / nested `ConfigValues` | object | grouped section (top-level objects are editor sections) |
+| `ConfigField.objectList(key)` | `List` of objects | array of objects | repeatable cards: add, remove, duplicate, reorder, bulk edit |
+
+The options of each type are on [Scalar fields](/schema/scalar-fields) and
+[Groups and lists](/schema/groups-and-lists).

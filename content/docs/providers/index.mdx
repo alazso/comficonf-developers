@@ -1,0 +1,43 @@
+---
+title: ConfigProvider
+description: The four callbacks of a resource, when the bridge calls them, and the order guarantees.
+---
+
+`ConfigProvider` has four callbacks. The bridge never runs two callbacks of the same resource at the same time, and
+one validate or apply operation runs its callbacks back to back.
+
+```java title="ConfigProvider.java"
+public interface ConfigProvider {
+    ConfigSchema describe();
+    ConfigSnapshot read() throws Exception;
+    default ValidationResult validate(ConfigValues proposed) throws Exception { return ValidationResult.ok(); }
+    ApplyResult apply(ApplyContext context) throws Exception;
+}
+```
+
+| Callback | Called | Returns |
+| --- | --- | --- |
+| [`describe()`](/providers/describe-and-read#describe) | Whenever the editor opens the resource, and before every validate and apply | The `ConfigSchema`: the fields the editor may show and change |
+| [`read()`](/providers/describe-and-read#read) | When the editor loads values, and during validate and apply | A `ConfigSnapshot`: the current values and their revision |
+| [`validate(proposed)`](/providers/validate) | After the bridge checked the proposed values against the schema | A `ValidationResult` with errors (block the change) and warnings |
+| [`apply(context)`](/providers/apply) | When the owner applies a change that passed validation | An `ApplyResult`: the truthful outcome |
+
+## What each operation runs
+
+- **Opening the editor:** `describe()`, then `read()`.
+- **Review:** the bridge checks the submitted values against your schema, computes the changes, and calls your
+  `validate()` for rules the schema cannot express.
+- **Apply:** the same checks and `validate()`, then `apply()`, where your plugin persists the values and activates
+  them. The bridge reports your outcome back to the editor.
+
+## Thread and timing
+
+Callbacks run on a bridge worker thread by default (`CallbackThread.WORKER`), never on the main thread; file and
+database access belong there. See [Threading](/providers/threading) for `MAIN`, `callSync` and the global limits.
+
+## When a callback throws
+
+Exception messages never leave the server: the editor sees only the callback and the exception class, and the
+message and stack trace go to the server log. Return explanations as `ValidationResult` issues,
+`ApplyResult.rejected(message)` or `ApplyResult.failed(message)` instead. An exception in `apply` makes the bridge
+call `read()` again to find out whether anything was persisted; see [Outcomes](/concepts/outcomes).

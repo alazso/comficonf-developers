@@ -1,0 +1,86 @@
+---
+title: Registration
+description: ConfigResource, ComfiConfApi, notifyChanged and unregistering.
+---
+
+## Building the resource
+
+```java title="ComfiConfIntegration.java"
+public static DemoIntegration register(JavaPlugin plugin, VoucherRuntime runtime, Path configFile,
+        Path backupDirectory, Consumer<String> adminNotifier) {
+    ConfigResource resource = ConfigResource.builder("comficonf-demo:vouchers")
+            .displayName("Vouchers")
+            .description("Voucher rewards, cooldowns and announcements of ComfiConfDemo.")
+            .provider(new VoucherConfigProvider(configFile, backupDirectory, runtime, adminNotifier,
+                    plugin.getLogger()))
+            .callbackThread(CallbackThread.WORKER)
+            .build();
+    return new ComfiConfIntegration(ComfiConfApi.get().register(plugin, resource));
+}
+```
+
+The id has the form `namespace:name`, each part 1 to 64 characters of `[a-z0-9._-]` starting with a letter or
+digit. **Keep the id stable across plugin versions**: the website and the audit history refer to it.
+
+| Builder method | Meaning |
+| --- | --- |
+| `displayName(String)` | Name in the editor, at most 80 characters. Defaults to the name part of the id. |
+| `description(String)` | Short description, at most 500 characters. |
+| `provider(ConfigProvider)` | Required. The callbacks. |
+| `callbackThread(CallbackThread)` | `WORKER` (default) or `MAIN`; see [Threading](/providers/threading). |
+
+## ComfiConfApi
+
+| Call | Behavior |
+| --- | --- |
+| `ComfiConfApi.get()` | Returns the bridge's implementation from the Bukkit `ServicesManager`; throws `IllegalStateException` when the bridge is not enabled. |
+| `ComfiConfApi.find()` | Same, as an `Optional`. |
+| `register(plugin, resource)` | Registers the resource. Throws `IllegalArgumentException` if the id is already registered (by any plugin) and `IllegalStateException` if your plugin is not enabled, so call it in `onEnable`, not `onLoad`. |
+| `registrations(plugin)` / `unregisterAll(plugin)` | Your active registrations; remove all of them. |
+| `connectionState()` | `DISCONNECTED`, `CONNECTING`, `UNPAIRED` or `CONNECTED`. Informational; you never need it to register. |
+| `apiVersion()` / `bridgeVersion()` | Version of the running bridge. A plugin compiled against a newer API compares `apiVersion()` with `ComfiConfApi.API_VERSION` before calling newer methods. |
+
+You can register several resources, for example one per configuration file.
+
+## The registration handle
+
+`register` returns a `ResourceRegistration`, which is thread-safe:
+
+| Method | Behavior |
+| --- | --- |
+| `resourceId()` | The registered resource id. |
+| `owner()` | The plugin that owns the registration. |
+| `isActive()` | Whether the registration is still active. |
+| `notifyChanged()` | Tells the bridge that the schema or values changed outside ComfiConf. |
+| `unregister()` / `close()` | Unregisters the resource. Calling it more than once has no further effect. |
+
+## notifyChanged
+
+Call `registration.notifyChanged()` whenever your values change outside ComfiConf, typically after your own reload
+command or after a manual edit you detected. Open editors then show that newer values exist. The demo's reload:
+
+```java title="ComfiConfDemoPlugin.java"
+@Nullable String reload() {
+    try {
+        runtime().reload(configFile());   // reads and swaps under VoucherRuntime.updateLock()
+    } catch (IOException | InvalidConfigException e) {
+        return e.getMessage();   // keep the previous configuration
+    }
+    if (integration != null) {
+        integration.notifyChanged();   // DemoIntegration delegates to ResourceRegistration.notifyChanged()
+    }
+    return null;
+}
+```
+
+Calls within about 250 ms are combined into one notification, so calling it generously is fine. It does nothing
+after the registration was removed.
+
+## Unregistering
+
+- Call `registration.unregister()` (or `close()`, it is `AutoCloseable`) in `onDisable`. Calling it again has no
+  effect.
+- The bridge also unregisters every resource of a plugin when it receives that plugin's `PluginDisableEvent`, and
+  everything when the bridge itself is disabled. Explicit unregistering is still good practice, and required if you
+  remove a resource while your plugin keeps running.
+- `ComfiConfApi.get().unregisterAll(plugin)` removes all your resources at once.

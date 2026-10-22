@@ -1,0 +1,59 @@
+---
+title: Groups and lists
+description: Nested groups with object fields, and repeatable entries with object lists.
+---
+
+## object
+
+`ConfigField.object(key)` returns an `ObjectFieldBuilder`: a nested group of fields. Its value is a `Map`, or a
+nested `ConfigValues`. Top-level objects are editor sections.
+
+| Method | Effect |
+| --- | --- |
+| `fields(...)` | The child fields. At least one child. |
+| `field(ConfigField)` | Adds one child field. |
+
+Objects are always present and cannot be optional. `readOnly()` on an object applies to its whole subtree.
+
+## objectList
+
+`ConfigField.objectList(key)` returns an `ObjectListFieldBuilder`: a list of objects, rendered as repeatable cards
+that the owner can add, remove, duplicate, reorder and bulk edit.
+
+| Method | Effect |
+| --- | --- |
+| `fields(...)` | Item fields; at least one. Sensitive fields are not allowed inside lists. |
+| `itemKey(fieldKey)` | A required `string` item field whose value identifies an item; values must be unique (`duplicate_key`). Change summaries match items by this key, so editing, reordering, adding and removing items is reported precisely. Strongly recommended. |
+| `itemTitle(fieldKey)` | Scalar item field used as each card's title and in change labels. Defaults to the item key. |
+| `itemLabel(noun)` | Singular noun such as `voucher`, used for "Add voucher" (at most 40 characters). |
+| `minItems(n)`, `maxItems(n)` | List size bounds. |
+| `ordered(boolean)` | Whether order matters (default `true`). Reordering an ordered keyed list produces a `reordered` change. |
+
+```java title="VoucherSchema.java"
+ConfigField.objectList("vouchers").itemKey("id").itemTitle("display-name").itemLabel("voucher")
+        .minItems(1)
+        .fields(
+                ConfigField.string("id").pattern("[a-z0-9_-]{1,32}"),
+                ConfigField.string("display-name").length(1, 48),
+                ConfigField.bool("enabled"),
+                ConfigField.material("material").itemsOnly(),
+                ConfigField.integer("cooldown-seconds").label("Cooldown").range(0, 604_800)
+                        .unit("seconds"),
+                ConfigField.string("permission").pattern("[a-z0-9_.-]+").maxLength(64),
+                ConfigField.integer("weight").range(1, 1000),
+                ConfigField.enumeration("rarity")
+                        .choice("common", "Common").choice("rare", "Rare")
+                        .choice("epic", "Epic").choice("legendary", "Legendary")));
+```
+
+## Paths inside lists
+
+List items are addressed by index: `vouchers[2].cooldown-seconds`. Changes inside a list carry the item's key in
+`FieldChange.itemKey()` when the list declares `itemKey`. `readOnly()` fields of an item that was added in the
+editor have no current value and are not compared; check them in `validate` if they matter.
+
+## Lists stored as keyed sections
+
+A Bukkit `config.yml` often stores items as sections keyed by id (`vouchers: {daily: {...}}`) instead of a YAML
+list. Declare the list with `SectionMapper.builder(schema).keyedSection("vouchers")`; the map key becomes the
+`itemKey` field. See [SectionMapper](/persistence/section-mapper).

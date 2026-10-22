@@ -1,0 +1,4 @@
+{
+  "title": "Schema reference",
+  "pages": ["index", "scalar-fields", "groups-and-lists", "sensitive-fields", "visibility", "regular-expressions"]
+}

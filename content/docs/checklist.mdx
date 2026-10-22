@@ -1,0 +1,26 @@
+---
+title: Checklist
+description: Everything to verify before you release a plugin with ComfiConf support.
+---
+
+| Area | Check |
+| --- | --- |
+| Dependency | `compileOnly` (Gradle) or `provided` (Maven) dependency on `com.comficonf:comficonf-api`; nothing shaded. |
+| Soft dependency | `softdepend: [ComfiConf]` in `plugin.yml`, or the `paper-plugin.yml` dependency with `load: BEFORE`, `required: false`, `join-classpath: true`. |
+| Optional hook | The main class references no API type; the integration is called only after `isPluginEnabled("ComfiConf")`; a test scans the class files. |
+| Resource id | A stable resource id `namespace:name`. |
+| Schema | `describe()` declares every editable field with labels, descriptions and constraints; object lists have an `itemKey`. |
+| Bukkit YAML | Mapped with `SectionMapper`, with `keyedSection` for lists stored as sections keyed by id. |
+| read() | Derives values and revision from the same bytes, returns secrets as `String`, and never turns unexpected values (such as `byte[]` from `!!binary`) into text. |
+| validate() | Checks only cross-field and storage rules, including text the storage cannot hold unchanged (for YAML: control characters, reported by `SectionMapper.validate`). |
+| apply() | Re-checks `baseRevision`, preserves undeclared data, checks that the new bytes read back to the proposed values, writes with `SafeFileWriter`, activates the values from the written bytes and returns `APPLIED` only when they are active. |
+| Restart | Restart-only fields use `restartRequired()` and lead to `SAVED_RESTART_REQUIRED`. |
+| Secrets | Secrets are `sensitive()` or `writeOnly()` and never logged. |
+| Shared files | Files shared between servers are symbolic links, not hard links: `SafeFileWriter` replaces the file, so other hard-linked names keep the old content. |
+| Lifecycle | Your reload command calls `notifyChanged()`; `onDisable` unregisters. |
+| Tests | Unit tests cover read, validate, apply, conflict and the round trip. |
+
+## Listing your plugin
+
+If your plugin is on Modrinth, add ComfiConf as an optional dependency of your version, so server owners find it.
+Point owners to the [user documentation](https://docs.comficonf.com) for installing and pairing the bridge.

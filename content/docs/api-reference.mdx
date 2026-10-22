@@ -1,0 +1,62 @@
+---
+title: API reference
+description: The packages and main types of com.comficonf:comficonf-api, and where to find the Javadoc.
+---
+
+The Javadoc of `com.comficonf:comficonf-api` is normative: where this site and the Javadoc disagree, the Javadoc
+wins. It will be published at <ReleaseLink to="javadoc">javadoc.io</ReleaseLink> once the API is on
+<ReleaseLink to="mavenCentral">Maven Central</ReleaseLink>. Until then, `publishToMavenLocal` installs the API with
+its `-javadoc.jar` and `-sources.jar`, so your IDE shows the Javadoc; see the [Quickstart](/quickstart).
+
+## com.comficonf.api
+
+| Type | Role |
+| --- | --- |
+| `ComfiConfApi` | Entry point: `get()`, `find()`, `register(plugin, resource)`, `registrations(plugin)`, `unregisterAll(plugin)`, `connectionState()`, `apiVersion()`, `bridgeVersion()`, and `API_VERSION`. |
+| `ConfigResource` | A registered resource: id, display name, description, provider and callback thread. Built with `ConfigResource.builder(id)`. |
+| `ConfigProvider` | The four callbacks: `describe()`, `read()`, `validate(proposed)`, `apply(context)`. |
+| `CallbackThread` | `WORKER` or `MAIN`. |
+| `ResourceRegistration` | Handle of a registration: `resourceId()`, `owner()`, `isActive()`, `notifyChanged()`, `unregister()`, `close()`. |
+| `ResourceId` | A `namespace:name` id: `ResourceId.of(namespace, name)`, `ResourceId.parse(value)`. |
+| `ConfigSnapshot` | Values and revision returned by `read()`: `ConfigSnapshot.of(values, revision)`. |
+| `ConfigValues` | Immutable tree of values with typed getters, `with`, `without` and a builder. |
+| `ConfigPath` | Builds and splits paths: `child`, `index`, `parse`. |
+| `ValidationResult`, `ValidationIssue`, `Severity` | Errors and warnings with a path, a message and a code. |
+| `ApplyContext` | Input of `apply`: base revision, current and proposed values, changes, actor, `callSync`. |
+| `ApplyResult`, `ApplyStatus` | The outcome of `apply`. |
+| `FieldChange`, `ChangeKind` | One difference: path, kind (`MODIFIED`, `ADDED`, `REMOVED`, `REORDERED`), apply mode, sensitive flag, item key, before, after. |
+| `Actor` | The account that requested an operation: `id`, `label`. |
+| `ConnectionState` | `DISCONNECTED`, `CONNECTING`, `UNPAIRED`, `CONNECTED`. |
+
+## com.comficonf.api.schema
+
+| Type | Role |
+| --- | --- |
+| `ConfigSchema` | The fields of a resource: `of(...)`, `builder()`, `MAX_FIELDS` (2000), `MAX_DEPTH` (8). |
+| `ConfigField` | Static factories of every field type. |
+| `StringFieldBuilder`, `BooleanFieldBuilder`, `IntegerFieldBuilder`, `DecimalFieldBuilder`, `EnumFieldBuilder`, `StringListFieldBuilder`, `MaterialFieldBuilder`, `ObjectFieldBuilder`, `ObjectListFieldBuilder` | The builders; see the [schema reference](/schema). |
+| `ApplyMode` | `LIVE` or `RESTART`. |
+| `VisibilityCondition` | `whenEquals`, `whenNotEquals`, `whenIn`, `whenNotIn`. |
+| `Choice` | A choice of an enum or string list: value, label, description. |
+| `MaterialFilter` | `ANY`, `BLOCK`, `ITEM`. |
+| `FieldType` | The field types. |
+| `SchemaException` | Thrown by builders for inconsistent definitions. |
+
+## com.comficonf.api.io
+
+| Type | Role |
+| --- | --- |
+| `Revisions` | `of(bytes)`, `ofFile(path)`, `ABSENT`. |
+| `SafeFileWriter` | `write`, `listBackups`, `restoreLatestBackup`, `lockFor`. |
+| `BackupPolicy` | Backup directory and retention. |
+| `RevisionConflictException` | Thrown by `SafeFileWriter.write` when the file changed; carries `currentRevision()`. |
+
+See [SafeFileWriter and revisions](/persistence/safe-file-writer).
+
+## com.comficonf.api.bukkit
+
+| Type | Role |
+| --- | --- |
+| `SectionMapper` | Maps a Bukkit `ConfigurationSection` to schema values and back: `of(schema)`, `builder(schema)` with `keyedSection(fieldPath)`, `schema()`, `read(section)`, `write(values, section)`, `validate(values)`. |
+
+See [SectionMapper for Bukkit YAML](/persistence/section-mapper).

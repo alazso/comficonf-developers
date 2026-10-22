@@ -1,0 +1,41 @@
+---
+title: Revisions and conflicts
+description: A revision identifies the stored state, so the bridge refuses changes based on values that changed in the meantime.
+---
+
+`read()` returns the current values together with a **revision** identifying that state. The revision must change
+whenever the stored values change, including manual edits, so the bridge can detect conflicts.
+
+A revision is an opaque string of 1 to 128 printable ASCII characters without spaces. For file-backed
+configuration, use the content hash: `Revisions.of(bytes)` is the lowercase hex SHA-256 of the bytes.
+
+## How a conflict is detected
+
+1. The editor loads the values and the revision from `read()`.
+2. The owner edits and applies. The request carries the revision the editor started from:
+   `ApplyContext.baseRevision()`. It matched the stored revision when the operation started.
+3. Your `apply` reads the **current** content and compares its revision with `baseRevision()`. If they differ,
+   another edit happened in the meantime, and you return `ApplyResult.conflict(currentRevision)`.
+4. `SafeFileWriter.write(target, bytes, expectedRevision, policy)` repeats the check under a per-path lock
+   immediately before the write and throws `RevisionConflictException` when the file changed.
+
+The editor then tells the owner that the configuration changed while they were editing and offers to reload.
+Nothing is overwritten.
+
+## Rules that keep conflict detection reliable
+
+- Compute the revision from the **same bytes** you parsed in `read()`. Hashing a re-serialized document or reading
+  the file twice opens a window where an edit goes unnoticed.
+- Never put timestamps or counters into the revision of unchanged content, or every apply ends in `CONFLICT`.
+- In `apply`, check `baseRevision` against the current content before you merge, and pass `baseRevision` as
+  `expectedRevision` to `SafeFileWriter` so the check is repeated immediately before the write.
+- Values that do not live in a file (a database, an in-memory object) need their own revision, for example a version
+  counter that you increment on every write.
+
+## Telling open editors about changes
+
+Call `registration.notifyChanged()` whenever your values change outside ComfiConf, typically after your own reload
+command or after a manual edit you detected. Open editors then show that newer values exist. See
+[notifyChanged and unregistering](/providers/registration#notifychanged).
+
+[SafeFileWriter, backups and revisions](/persistence/safe-file-writer) documents the helpers.

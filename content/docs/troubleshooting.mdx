@@ -1,0 +1,107 @@
+---
+title: Troubleshooting
+description: Class loading errors, registration exceptions, conflicts, type errors, YAML problems and timeouts.
+---
+
+## NoClassDefFoundError: com/comficonf/api/... when ComfiConf is not installed
+
+Your main class (or another class loaded at startup, such as a listener or command class) refers to an API type.
+Move every API use into the integration class and call it only after `isPluginEnabled("ComfiConf")`; see the
+[optional hook pattern](/quickstart#3-keep-the-integration-optional). Remember that method signatures, fields and
+`catch` clauses count as references.
+
+## NoClassDefFoundError or ClassNotFoundException for API classes although ComfiConf is installed
+
+The bridge was not loaded before your plugin, or your Paper plugin does not share its classpath. Add
+`softdepend: [ComfiConf]` to `plugin.yml`, or `load: BEFORE` and `join-classpath: true` under
+`dependencies.server.ComfiConf` in `paper-plugin.yml`.
+
+## NoClassDefFoundError for a com.comficonf.api class when your plugin enables
+
+The installed ComfiConf plugin does not contain the API classes your plugin was compiled against, usually because it
+is older than the `comficonf-api` version in your build. Install a ComfiConf version at least as new as that API.
+Catching `LinkageError` around the registration, as in the
+[optional hook pattern](/quickstart#3-keep-the-integration-optional), keeps your plugin running until then.
+
+## ComfiConfApi.get() throws "not installed or not enabled" although the bridge runs, or a ClassCastException mentions ComfiConfApi
+
+You shaded the API into your JAR. Your copy of `ComfiConfApi` is a different class than the bridge's, so the service
+lookup cannot find it. Use `compileOnly` (Gradle) or `provided` (Maven) and check that your JAR contains no
+`com/comficonf/api` entries:
+
+```sh title="Terminal"
+jar tf MyPlugin.jar | grep comficonf
+```
+
+## IllegalStateException: Plugin ... is not enabled from register
+
+You registered in `onLoad` or from a constructor. Register in `onEnable`.
+
+## IllegalArgumentException: Resource ... is already registered
+
+Two plugins (or two registrations of yours) use the same id, or you registered again after a reload without
+unregistering. Unregister in `onDisable` and keep ids unique, for example prefixed with your plugin name.
+
+## Every apply returns CONFLICT
+
+Your revision is not stable: it is computed from something other than the stored bytes, includes a timestamp, or
+`read()` and `apply()` compute it differently. See [SafeFileWriter and revisions](/persistence/safe-file-writer).
+
+## Apply returns REJECTED with no_changes
+
+The submitted values equal the current ones as `read()` returned them. If the owner did change something, `read()`
+returns values that differ from what you store, for example a default your mapper fills in for a missing key, so the
+edit only restored what `read()` already reported.
+
+## A setting is missing in the editor
+
+Only declared fields are shown, and values under undeclared keys are dropped. Check the key spelling and nesting in
+your schema against what `read()` returns.
+
+## The editor shows a type error for a value that looks right in the file
+
+YAML typed the value differently: `"5"` is a string and `5` an integer, and `yes`, `no`, `on` and `off` are
+booleans. The bridge already converts integer YAML values for `decimal` fields and whole decimals for `integer`
+fields, so numbers are rarely the cause; a quoted number in a number field, or an unquoted number or boolean in a
+`string` field, is. Convert in `read()`, and write the declared type back in `apply()`. `SectionMapper` converts
+numbers and booleans in text fields to text; a quoted number in a number field or a quoted `'true'` in a boolean
+field stays a type error, which the owner fixes by entering the value again in the editor.
+
+## read() fails with "... is a section, not a list; to read a section keyed by ..."
+
+The file stores an object list as a section keyed by id (`kits: {starter: {...}}`), but the `SectionMapper` expects a
+YAML list. Declare the list with `SectionMapper.builder(schema).keyedSection("kits")`.
+
+## read() fails with "stored as binary data (!!binary)", or a text value shows as [B@...
+
+The file holds a string that YAML could only save as binary data, because it contained a control character; see
+[Text that YAML cannot store](/persistence/section-mapper#text-that-yaml-cannot-store). Replace the value with text in
+the file, and reject such text in `validate()` so it cannot be saved again.
+
+## Apply returns REJECTED with "config.yml cannot store this value unchanged"
+
+The new file content did not read back to the proposed values, so nothing was saved. In the demo this means the
+proposal holds a value that `SectionMapper.write` does not store, such as a key the schema does not declare; check
+the reported path.
+
+## Callbacks time out or the backend reports BUSY
+
+A `MAIN` callback waited more than 10 seconds for the main thread (server lag or a long main-thread task), or
+callbacks block for a long time. Use `WORKER`, keep main-thread work short, and never wait for a worker from the main
+thread. See [Threading](/providers/threading).
+
+## callSync throws TimeoutException
+
+The main thread did not finish the task within 10 seconds, or the server is stopping. Treat it as a failed side
+effect, not as a failed apply, if the values are already active (the demo logs it and still reports `APPLIED`).
+
+## The bridge does not connect
+
+Run `/comficonf status`. The bridge connects to ComfiConf at `wss://app.comficonf.com/api/v1/bridge`. For a local or
+self-hosted backend, add `backend-url` and `web-url` to `plugins/ComfiConf/config.yml`. `ws://` is accepted only for
+`localhost`, `127.0.0.1` and `::1` unless `allow-insecure-connections: true`; production uses `wss://`. After editing
+`plugins/ComfiConf/config.yml`, run `/comficonf reconnect`. While the backend is unreachable the bridge keeps retrying
+with backoff (up to one minute) and logs a warning only when the error changes or every ten minutes.
+
+The [user docs](https://docs.comficonf.com/troubleshooting) cover connection and pairing problems from the server
+owner's side.

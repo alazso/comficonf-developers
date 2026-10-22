@@ -1,0 +1,55 @@
+---
+title: Schemas
+description: The schema declares the fields the editor may show and change; the editor and the bridge's checks come from it.
+---
+
+A **schema** (`ConfigSchema`) lists the fields of a resource: their keys, types, labels, help texts, constraints,
+apply modes and visibility rules. Your provider returns it from `describe()`.
+
+Create fields with the static factories of `ConfigField` and collect them with `ConfigSchema.of(...)` or
+`ConfigSchema.builder()`. The demo builds its schema once, together with the `SectionMapper` that maps it to
+`config.yml`:
+
+```java title="VoucherConfigProvider.java"
+public final class VoucherConfigProvider implements ConfigProvider {
+    private final SectionMapper mapper = VoucherSchema.mapper();
+
+    @Override
+    public ConfigSchema describe() {
+        return mapper.schema();
+    }
+}
+
+// VoucherSchema
+public static SectionMapper mapper() {
+    return SectionMapper.builder(create()).keyedSection("vouchers").build();
+}
+```
+
+The full `VoucherSchema.create()` excerpt is on [describe() and read()](/providers/describe-and-read).
+
+## What the schema drives
+
+- **The editor.** Every control, section, list and hint is generated from the schema; there is no plugin-specific
+  web code. Top-level objects are editor sections.
+- **The bridge's checks.** Before your `validate` runs, the bridge checks the submitted values against the schema:
+  types, ranges, patterns, choices, required values, list sizes, duplicate keys and so on. See
+  [what the bridge checks](/providers/validate#what-the-bridge-checks-for-you).
+- **Change summaries.** Labels build change labels such as `Vouchers › Daily Reward › Cooldown`, and `itemKey`
+  lets the bridge report edits, moves, additions and removals of list items precisely.
+- **Apply modes.** Fields declared `restartRequired()` are reported as waiting for a restart.
+
+## Only declared keys are sent
+
+Only declared keys are ever sent to the editor. Everything else in your file (`config-version`, a `metrics`
+section, voucher `lore`) stays private and must be preserved by your `apply`.
+
+## Built and checked eagerly
+
+Builders validate eagerly and throw `SchemaException` (an `IllegalArgumentException`) for inconsistent
+definitions, so a broken schema fails at `describe()` time in your own tests. Build your schema in a test.
+
+`describe()` is called whenever the editor opens the resource and before every validate and apply, so a schema can
+depend on runtime data, for example choices built from loaded content.
+
+The [schema reference](/schema) lists every builder.

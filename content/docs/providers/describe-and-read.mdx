@@ -1,0 +1,96 @@
+---
+title: describe() and read()
+description: Return the schema and the current values, with a revision derived from the same bytes.
+---
+
+## describe()
+
+Returns the fields the editor may show and change. Called whenever the editor opens the resource and before every
+validate and apply, so a schema can depend on runtime data (for example choices built from loaded content). The
+demo builds its schema once, together with the `SectionMapper` that maps it to `config.yml`
+([SectionMapper](/persistence/section-mapper)):
+
+```java title="VoucherConfigProvider.java"
+public final class VoucherConfigProvider implements ConfigProvider {
+    private final SectionMapper mapper = VoucherSchema.mapper();
+
+    @Override
+    public ConfigSchema describe() {
+        return mapper.schema();
+    }
+}
+
+// VoucherSchema
+public static SectionMapper mapper() {
+    return SectionMapper.builder(create()).keyedSection("vouchers").build();
+}
+```
+
+An excerpt of `VoucherSchema.create()`:
+
+```java title="VoucherSchema.java"
+ConfigSchema.of(
+        ConfigField.object("settings").label("General").fields(
+                ConfigField.string("prefix").label("Message prefix")
+                        .description("MiniMessage text shown before every voucher message.")
+                        .maxLength(64),
+                ConfigField.bool("announce-redemptions"),
+                ConfigField.stringList("announcement-channels")
+                        .choice("chat", "Chat").choice("actionbar", "Action bar").choice("title", "Title")
+                        .uniqueItems().minItems(1).ordered(false)
+                        .visibleWhen("announce-redemptions", true),
+                ConfigField.integer("max-redemptions-per-day").range(0, 100).slider(),
+                ConfigField.decimal("bonus-multiplier").range(0.0, 10.0).step(0.1).unit("x"),
+                ConfigField.enumeration("storage-mode")
+                        .choice("yaml", "YAML file").choice("sqlite", "SQLite database")
+                        .restartRequired(),
+                ConfigField.stringList("disabled-worlds")
+                        .itemPattern("[A-Za-z0-9_.-]{1,64}", "World names use letters, digits, '_', '-' and '.'."),
+                ConfigField.text("welcome-message").maxLength(500),
+                ConfigField.string("webhook-url").label("Webhook URL").optional().writeOnly()
+                        .pattern("https://.+", "Use an https:// URL.")),
+        ConfigField.objectList("vouchers").itemKey("id").itemTitle("display-name").itemLabel("voucher")
+                .minItems(1)
+                .fields(
+                        ConfigField.string("id").pattern("[a-z0-9_-]{1,32}"),
+                        ConfigField.string("display-name").length(1, 48),
+                        ConfigField.bool("enabled"),
+                        ConfigField.material("material").itemsOnly(),
+                        ConfigField.integer("cooldown-seconds").label("Cooldown").range(0, 604_800)
+                                .unit("seconds"),
+                        ConfigField.string("permission").pattern("[a-z0-9_.-]+").maxLength(64),
+                        ConfigField.integer("weight").range(1, 1000),
+                        ConfigField.enumeration("rarity")
+                                .choice("common", "Common").choice("rare", "Rare")
+                                .choice("epic", "Epic").choice("legendary", "Legendary")));
+```
+
+Only declared keys are ever sent to the editor. Everything else in your file (`config-version`, a `metrics`
+section, voucher `lore`) stays private and must be preserved by your `apply`.
+
+## read()
+
+Returns the current values and a **revision** identifying that state. The revision must change whenever the stored
+values change, including manual edits, so the bridge can detect conflicts. For files, read the bytes **once** and
+derive both the values and the revision from the same bytes:
+
+```java title="VoucherConfigProvider.java"
+@Override
+public ConfigSnapshot read() throws IOException, InvalidConfigException {
+    byte[] content = Files.readAllBytes(configFile);
+    ConfigValues values = mapper.read(VoucherConfigLoader.parse(content));
+    return ConfigSnapshot.of(values, Revisions.of(content));
+}
+```
+
+`mapper.read` maps the YAML onto the schema: the `vouchers` map becomes a list in file order with the map key as the
+`id` field, and the empty `webhook-url` of the optional field becomes "no value" (`null`). Without `SectionMapper`,
+return values with the types of [Values and paths](/concepts/values-and-paths); keys you return that the schema does
+not declare are dropped by the bridge.
+
+If you read YAML yourself, never turn an unexpected value into text with `String.valueOf` in `read()`: a `byte[]`
+becomes `[B@2dafd777`, and the next apply writes that back as the real value. `SectionMapper.read` throws for
+`byte[]` and section values instead, so the editor reports that the file cannot be read and the server log names
+the path. See [Text that YAML cannot store](/persistence/section-mapper#text-that-yaml-cannot-store).
+
+Return sensitive values as `String`; see [Sensitive fields](/schema/sensitive-fields).

@@ -1,0 +1,104 @@
+---
+title: Scalar fields
+description: The options of string, text, boolean, integer, decimal, enum, string list and material fields.
+---
+
+Every builder also has the [common attributes](/schema#common-attributes-all-field-types).
+
+## string and text
+
+`ConfigField.string(key)` and `ConfigField.text(key)` return a `StringFieldBuilder`. `string` renders a text input,
+`text` a text area.
+
+| Method | Effect |
+| --- | --- |
+| `minLength(n)`, `maxLength(n)`, `length(min, max)` | Length in Unicode code points. |
+| `pattern(regex)`, `pattern(regex, message)` | The whole value must match. See [Regular expressions](/schema/regular-expressions). A pattern has at most 1000 characters and its message at most 300. |
+| `placeholder(text)` | Placeholder of the empty input. |
+| `defaultValue(text)` | Suggested value for new list items and empty optional values. |
+| `sensitive()` | Secret value, never sent to the editor and not editable; see [Sensitive fields](/schema/sensitive-fields). |
+| `writeOnly()` | Secret value that the editor can replace without seeing it. Implies `sensitive()`. |
+
+```java title="VoucherSchema.java"
+ConfigField.string("prefix").label("Message prefix")
+        .description("MiniMessage text shown before every voucher message.")
+        .maxLength(64),
+```
+
+## boolean
+
+`ConfigField.bool(key)` renders a toggle. Its only option is `defaultValue(boolean)`.
+
+## integer and decimal
+
+`ConfigField.integer(key)` returns an `IntegerFieldBuilder`, `ConfigField.decimal(key)` a `DecimalFieldBuilder`.
+
+| Method | Effect |
+| --- | --- |
+| `min(n)`, `max(n)`, `range(min, max)` | Inclusive bounds. Integer bounds, steps and defaults must be within ±9007199254740991. |
+| `step(n)` | Increment of the editor's controls; a hint, values are not forced to be multiples. |
+| `unit(text)` | Unit shown next to the input, such as `seconds` or `x` (at most 24 characters). |
+| `slider()` | Adds a slider; needs both bounds. |
+| `defaultValue(n)` | Default within the bounds. |
+
+```java title="VoucherSchema.java"
+ConfigField.integer("max-redemptions-per-day").range(0, 100).slider(),
+ConfigField.decimal("bonus-multiplier").range(0.0, 10.0).step(0.1).unit("x"),
+```
+
+Integer values are `Long` within ±9007199254740991; decimal values are `Double`.
+
+## enum
+
+`ConfigField.enumeration(key)` returns an `EnumFieldBuilder` and renders a dropdown.
+
+| Method | Effect |
+| --- | --- |
+| `choice(value)`, `choice(value, label)`, `choice(value, label, description)`, `choice(Choice)` | Adds a choice. At least one and at most 500 unique choices. |
+| `defaultValue(value)` | Default choice. |
+
+`enumeration(key, MyEnum.class)` adds one choice per enum constant with a derived label.
+
+```java title="VoucherSchema.java"
+ConfigField.enumeration("rarity")
+        .choice("common", "Common").choice("rare", "Rare")
+        .choice("epic", "Epic").choice("legendary", "Legendary")
+```
+
+## stringList
+
+`ConfigField.stringList(key)` returns a `StringListFieldBuilder`. With choices it renders a multi-select, without a
+tag input.
+
+| Method | Effect |
+| --- | --- |
+| `choice(...)` | Restricts items to the choices (multi-select). Without choices the list is free-form. |
+| `minItems(n)`, `maxItems(n)` | List size bounds. |
+| `uniqueItems()` | Items must be distinct; repeats are reported at the repeated item. |
+| `ordered(boolean)` | Whether order matters and can be changed (default `true`). |
+| `itemMinLength(n)`, `itemMaxLength(n)`, `itemPattern(regex, message)` | Constraints of each item, with the same limits as for strings. |
+| `placeholder(text)`, `defaultValue(list)` | As for strings. |
+
+```java title="VoucherSchema.java"
+ConfigField.stringList("announcement-channels")
+        .choice("chat", "Chat").choice("actionbar", "Action bar").choice("title", "Title")
+        .uniqueItems().minItems(1).ordered(false)
+        .visibleWhen("announce-redemptions", true),
+ConfigField.stringList("disabled-worlds")
+        .itemPattern("[A-Za-z0-9_.-]{1,64}", "World names use letters, digits, '_', '-' and '.'."),
+```
+
+## material
+
+`ConfigField.material(key)` returns a `MaterialFieldBuilder` and renders a searchable material picker. The value is
+a `Material.name()` such as `DIAMOND_SWORD`.
+
+| Method | Effect |
+| --- | --- |
+| `itemsOnly()` | Only materials where `Material.isItem()` is true. |
+| `blocksOnly()` | Only materials where `Material.isBlock()` is true. |
+| `filter(MaterialFilter)` | `ANY`, `BLOCK` or `ITEM`. |
+| `defaultValue(name)` | Default material. |
+
+The bridge accepts only non-legacy materials of the running server that are blocks or items (not `AIR`, `CAVE_AIR`,
+`VOID_AIR`).

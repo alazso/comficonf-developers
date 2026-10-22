@@ -1,0 +1,102 @@
+---
+title: Demo plugin walkthrough
+description: ComfiConfDemo, the reference integration, explained file by file.
+---
+
+ComfiConfDemo is a voucher plugin that works on its own and exposes its configuration to ComfiConf when the bridge is
+installed. It lives in `examples/demo-plugin` of the <ReleaseLink to="apiRepository">ComfiConf API
+repository</ReleaseLink>, and its JAR, `ComfiConfDemo-COMFICONF_ARTIFACT_VERSION.jar`, is attached to the
+<ReleaseLink to="githubRelease">GitHub release</ReleaseLink>. Every page of this site quotes it.
+
+## Layout
+
+| File | Role |
+| --- | --- |
+| `ComfiConfDemoPlugin.java` | The main class. References no `com.comficonf.api` type, so it loads without the bridge; it touches the integration only after `isPluginEnabled("ComfiConf")` returned true. |
+| `DemoIntegration.java` | The plugin's view of its optional integration, declared in an API-free package so the main class can hold it in a field. |
+| `VouchersCommand.java` | `/vouchers` with `info <id>`, `settings`, `redeem <id> <player>`, `status` and `reload`; one line per item, readable on the console and in the server log. |
+| `RedemptionService.java` | Simulated redemptions: per-player cooldowns and daily counts in memory, decided from the configuration that is active at that moment. |
+| `config/VoucherConfigLoader.java` | Turns `config.yml` into a `VoucherConfig`, reporting every problem at once. Independent of ComfiConf. |
+| `config/VoucherRuntime.java` | Holds the active configuration and swaps it atomically on reload, under `updateLock()`. The storage mode is fixed when the plugin starts. |
+| `integration/ComfiConfIntegration.java` | Registers the resource `comficonf-demo:vouchers`. The only class the plugin loads that refers to the API. |
+| `integration/VoucherSchema.java` | The editable fields of `config.yml`, and the `SectionMapper` with `keyedSection("vouchers")`. |
+| `integration/VoucherConfigProvider.java` | The `ConfigProvider`. Callbacks run on a bridge worker thread; only the admin notification hops to the main thread. |
+
+## The configuration file
+
+`config.yml` holds keys that the editor shows and keys it never sees. `config-version` and the `metrics` section are
+not declared, and neither is each voucher's `lore`, so they never leave the server and survive every change made
+through ComfiConf:
+
+```yaml title="config.yml"
+# Layout version of this file. Not editable on the website.
+config-version: 3
+
+# Anonymous usage statistics. Not editable on the website.
+metrics:
+  enabled: false
+  report-interval-minutes: 30
+
+settings:
+  # MiniMessage text shown before every voucher message.
+  prefix: "<gold>[Vouchers]</gold> "
+  # Where redemption history is stored: yaml or sqlite. Takes effect after a restart.
+  storage-mode: yaml
+  # Optional https:// webhook notified on every redemption. ComfiConf never shows its value.
+  webhook-url: ""
+
+# Vouchers by id. Each id is the key of its section; lore lines appear in the voucher's tooltip.
+vouchers:
+  daily:
+    display-name: Daily Reward
+    enabled: true
+    material: SUNFLOWER
+    cooldown-seconds: 86400
+    permission: vouchers.daily
+    weight: 100
+    rarity: common
+    lore:
+      - Claim once every day.
+```
+
+The excerpt shows a part of the file; the demo's `config.yml` has every setting and six vouchers.
+
+## Walking through a change
+
+1. **Start.** `onEnable` loads `config.yml` into `VoucherRuntime`. If the bridge is enabled, it calls
+   `ComfiConfIntegration.register`, catching `LinkageError` for an outdated bridge; see the
+   [optional hook pattern](/quickstart#3-keep-the-integration-optional).
+2. **Describe and read.** `VoucherConfigProvider.describe()` returns `mapper.schema()`. `read()` reads the bytes
+   once, maps them with `SectionMapper` (the `vouchers` sections become a list with the section key as `id`), and
+   hashes the same bytes for the revision. See [describe() and read()](/providers/describe-and-read).
+3. **Validate.** `validate()` rejects `§` color codes in the prefix, warns about cooldowns under 60 seconds and
+   permissions outside `vouchers.`, requires one enabled voucher, and merges `SectionMapper.validate`. See
+   [validate()](/providers/validate).
+4. **Apply.** Under the runtime's update lock, `apply()` checks the base revision, writes the proposal into the parsed
+   document, checks that the new bytes read back to the proposal, writes them with `SafeFileWriter`, builds the new
+   runtime configuration from those bytes and swaps it in. A storage mode change returns `SAVED_RESTART_REQUIRED`.
+   See [apply()](/providers/apply).
+5. **Reload by hand.** `/vouchers reload` reads and swaps under the same lock, then calls `notifyChanged()` so open
+   editors learn about the new values. See [notifyChanged](/providers/registration#notifychanged).
+6. **Stop.** `onDisable` closes the integration, which unregisters the resource.
+
+## Commands and permissions
+
+| Command | Permission |
+| --- | --- |
+| `/vouchers`, `/vouchers info <id>`, `/vouchers settings`, `/vouchers redeem <id> <player>`, `/vouchers status` | `comficonf.demo.use` (default: everyone) |
+| `/vouchers reload` | `comficonf.demo.admin` (default: operators), who also receive configuration change notices |
+
+## Tests
+
+| Test | Shows |
+| --- | --- |
+| `NoApiReferenceTest` | No class outside the integration package refers to the API, so the plugin loads without the bridge. |
+| `IncompatibleBridgeTest` | The warning for an outdated bridge names the installed version and the missing class. |
+| `VoucherConfigMappingTest` | How `VoucherSchema.mapper()` maps the demo's `config.yml`. |
+| `VoucherConfigProviderTest` | The provider contract: read, validate, apply, conflicts and the round trip. |
+| `VoucherRuntimeTest` | Reloads under the update lock and keeps the configuration on errors. |
+| `RedemptionServiceTest` | Cooldowns, daily limits, permissions and disabled worlds of the active configuration. |
+| `TestApplyContext` | An `ApplyContext` for provider tests; `callSync` runs the task on the calling thread. |
+
+[Testing](/testing) explains the patterns.

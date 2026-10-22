@@ -1,0 +1,53 @@
+---
+title: Values and paths
+description: ConfigValues, the types values are normalized to, and the path syntax used by issues and accessors.
+---
+
+`ConfigValues` is an immutable tree. Values are normalized when you create it:
+
+| Java value | Stored as | JSON |
+| --- | --- | --- |
+| `String` | `String` | string |
+| `Boolean` | `Boolean` | boolean |
+| `byte`, `short`, `int`, `long`, `BigInteger` (fitting a long) | `Long` | integer |
+| `float`, `double`, `BigDecimal` | `Double` (finite only) | number |
+| `List` | unmodifiable `List` without `null` items | array |
+| `Map` with `String` keys, or `ConfigValues` | unmodifiable `Map`, insertion order kept | object |
+| `null` | `null` (no value) | `null` or omitted |
+
+## Values from YAML
+
+For Bukkit YAML, [`SectionMapper`](/persistence/section-mapper) does all conversions in both directions. If you
+build values yourself: scalar `YamlConfiguration` values can usually be passed through directly, since an
+`Integer` from YAML becomes a `Long`. For the editor, the bridge also converts integers to `Double` for `decimal`
+fields and whole decimals to `Long` for `integer` fields. Convert other values whose YAML type differs from the
+field type yourself, and convert on write as well (YAML reads `2` in a decimal field as an integer).
+
+A `ConfigurationSection` is not a `Map`, a `!!binary` value is a `byte[]` (see
+[Text that YAML cannot store](/persistence/section-mapper#text-that-yaml-cannot-store)), and every map key must be a
+valid field key (`[A-Za-z0-9_-]{1,64}`); otherwise `ConfigValues.of` throws `IllegalArgumentException`. So
+`ConfigValues.of(yaml.getValues(false))` does not work. Build plain maps of the declared keys instead.
+
+## Paths
+
+Paths join keys with `.` and address list items with `[index]`: `settings.prefix`, `vouchers[2].cooldown-seconds`,
+`settings.disabled-worlds[0]`. The empty path is the root. Useful accessors:
+
+```java title="ConfigValues"
+values.getString("settings.prefix");                     // throws if missing
+values.getString("settings.prefix", "");                 // with fallback
+values.getLong("vouchers[0].cooldown-seconds");
+values.getInt("settings.max-redemptions-per-day");       // throws if it does not fit an int
+values.getDouble("settings.bonus-multiplier");           // also accepts integers
+values.getStringList("settings.disabled-worlds");        // empty when missing
+values.getObject("settings");                            // nested ConfigValues
+values.getObjectList("vouchers");                        // List<ConfigValues>
+values.contains("settings.webhook-url");
+values.with("settings.prefix", "<aqua>[V]</aqua> ");     // returns a modified copy
+values.without("settings.legacy");                       // returns a copy without the key
+ConfigValues.builder().put("settings.prefix", "x").build();
+```
+
+`ConfigPath.child`, `ConfigPath.index` and `ConfigPath.parse` build and split paths.
+
+Issue paths in `ValidationResult` use the same syntax; `""` addresses the whole resource.

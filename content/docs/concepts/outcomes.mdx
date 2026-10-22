@@ -1,0 +1,47 @@
+---
+title: Outcomes
+description: The ApplyResult factories, what each status promises, and what the bridge does around your apply.
+---
+
+Server owners rely on the result to know whether their change is live. Use the `ApplyResult` factories; they
+enforce the invariants:
+
+| Factory | Status | Persisted | Activated | Use when |
+| --- | --- | --- | --- | --- |
+| `ApplyResult.applied(newRevision)` | `APPLIED` | yes | yes | The values are stored **and active**. Saving a file alone is never enough. |
+| `ApplyResult.savedRestartRequired(newRevision, message)` | `SAVED_RESTART_REQUIRED` | yes | no | Stored, but not everything is active: restart-only fields changed, or the live reload failed. The bridge fills `restartRequired` with the changed `restartRequired()` fields. |
+| `ApplyResult.savedRestartRequired(newRevision, message, paths)` | `SAVED_RESTART_REQUIRED` | yes | no | Same, naming the paths that wait for a restart. |
+| `ApplyResult.rejected(validationResult)` / `rejected(message)` | `REJECTED` | no | no | Your storage refuses the values. Needs at least one error. |
+| `ApplyResult.conflict(currentRevision)` | `CONFLICT` | no | no | The stored state no longer matches `baseRevision`. The editor offers to reload. |
+| `ApplyResult.failed(message)` | `FAILED` | no | no | Nothing was stored and the operation failed. |
+
+`applied(newRevision, message)` adds an optional message to an `APPLIED` result.
+
+## What the bridge does around your apply
+
+- If `apply` throws (any exception, also `NoClassDefFoundError` and other linkage errors), the bridge logs the
+  stack trace and calls `read()` again. Unchanged revision: `FAILED`, not persisted. Changed revision: `FAILED`,
+  persisted, with a message that the values were saved but may not be active. A `null` result counts as an
+  exception.
+- Exception messages never leave the server. When a callback throws, the editor only sees the callback and the
+  exception class, for example `read() threw InvalidConfigurationException (details in the server log)`; the message
+  and stack trace go to the server log. Parser exceptions embed file content (SnakeYAML quotes the offending line,
+  which can be a password), so this applies to `describe`, `read`, `validate` and `apply` alike. To show the owner
+  an explanation, return it: `ValidationResult` issues, `ApplyResult.rejected(message)` or
+  `ApplyResult.failed(message)`, and keep secrets and configuration values out of those messages.
+- Every outcome is cached for 15 minutes under the operation id, so a retried submission returns the cached result
+  instead of applying twice.
+- After `APPLIED` or `SAVED_RESTART_REQUIRED`, open editors are told that the resource changed.
+
+## How the owner sees it
+
+| Status | Title in the editor |
+| --- | --- |
+| `APPLIED` | Changes applied and active |
+| `SAVED_RESTART_REQUIRED` | Saved. A restart is needed |
+| `REJECTED` | The plugin rejected these changes |
+| `CONFLICT` | The configuration changed while you were editing |
+| `FAILED` | Applying failed |
+
+The user documentation explains each one to server owners:
+[Apply outcomes](https://docs.comficonf.com/editor/apply-outcomes).

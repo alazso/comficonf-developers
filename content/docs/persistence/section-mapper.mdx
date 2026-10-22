@@ -1,0 +1,143 @@
+---
+title: SectionMapper for Bukkit YAML
+description: Map a Bukkit ConfigurationSection to the values of your schema and back, keeping comments and undeclared keys.
+---
+
+`com.comficonf.api.bukkit.SectionMapper` maps a Bukkit `ConfigurationSection`, such as a `YamlConfiguration` loaded
+from your `config.yml`, to the values of your schema and back, so you do not write a mapper. It is part of the API
+JAR; there is no extra dependency. The schema mirrors the file: each field is stored under its key, an `object` field
+is a nested section, and an `objectList` field is a list of sections, or a section keyed by item id when you declare
+it with `keyedSection`.
+
+## A complete provider
+
+A complete provider for a file like this:
+
+```yaml title="config.yml"
+prefix: "<gold>[Homes]</gold> "
+max-homes: 5
+kits:
+  starter:          # kept: comments, and keys the schema does not declare
+    icon: WOODEN_SWORD
+    cooldown: 3600
+```
+
+```java title="HomesConfigProvider.java"
+public final class HomesConfigProvider implements ConfigProvider {
+
+    private final Path file;
+    private final BackupPolicy backups;
+    private final HomesPlugin plugin;
+    private final SectionMapper mapper = SectionMapper.builder(ConfigSchema.of(
+                    ConfigField.string("prefix").maxLength(64),
+                    ConfigField.integer("max-homes").range(1, 100),
+                    ConfigField.objectList("kits").itemKey("id").fields(
+                            ConfigField.string("id").pattern("[a-z0-9_-]{1,32}"),
+                            ConfigField.material("icon").itemsOnly(),
+                            ConfigField.integer("cooldown").min(0).unit("seconds"))))
+            .keyedSection("kits")   // kits.<id> sections instead of a YAML list
+            .build();
+
+    public HomesConfigProvider(HomesPlugin plugin, Path file, Path backupDirectory) {
+        this.plugin = plugin;
+        this.file = file;
+        this.backups = BackupPolicy.in(backupDirectory);
+    }
+
+    @Override
+    public ConfigSchema describe() {
+        return mapper.schema();
+    }
+
+    @Override
+    public ConfigSnapshot read() throws IOException, InvalidConfigurationException {
+        byte[] content = Files.readAllBytes(file);
+        return ConfigSnapshot.of(mapper.read(parse(content)), Revisions.of(content));
+    }
+
+    @Override
+    public ValidationResult validate(ConfigValues proposed) {
+        return mapper.validate(proposed);   // add your own rules with .merge(...)
+    }
+
+    @Override
+    public ApplyResult apply(ApplyContext context) throws Exception {
+        byte[] current = Files.readAllBytes(file);
+        if (!Revisions.of(current).equals(context.baseRevision())) {
+            return ApplyResult.conflict(Revisions.of(current));
+        }
+        YamlConfiguration yaml = parse(current);
+        mapper.write(context.proposed(), yaml);
+        String newRevision;
+        try {
+            newRevision = SafeFileWriter.write(file, yaml.saveToString().getBytes(StandardCharsets.UTF_8),
+                    context.baseRevision(), backups).newRevision();
+        } catch (RevisionConflictException e) {
+            return ApplyResult.conflict(e.currentRevision());
+        }
+        try {
+            context.runSync(() -> plugin.loadSettings(yaml));   // your code: activate what was written
+        } catch (Exception e) {
+            return ApplyResult.savedRestartRequired(newRevision, "Saved, but the plugin could not load the new"
+                    + " settings. They take effect after a restart.");
+        }
+        return ApplyResult.applied(newRevision);
+    }
+
+    private static YamlConfiguration parse(byte[] content) throws InvalidConfigurationException {
+        YamlConfiguration yaml = new YamlConfiguration();
+        yaml.loadFromString(new String(content, StandardCharsets.UTF_8));
+        return yaml;
+    }
+}
+```
+
+## What the mapper does
+
+The Javadoc of `SectionMapper` has every rule.
+
+- **Reads** exactly the declared keys. YAML integers become `Long`, any number in a `decimal` field becomes `Double`,
+  and numbers or booleans in text fields become text, so an unquoted numeric secret arrives as a `String`. A value of
+  the wrong kind that can still be shown, such as `'yes'` in a boolean field, is passed on unchanged, and the editor
+  reports it at its path. Values that cannot be shown without losing data (a section where a single value belongs,
+  `!!binary` data, a date) make `read` throw `IllegalStateException` with the path, so the editor reports that the
+  file cannot be read.
+- **Writes** only declared keys. Undeclared keys and the comments of kept keys stay, unchanged values keep their YAML
+  form (a decimal stored as `2` stays `2`), and list items keep their undeclared keys by matching the stored item
+  with the same `itemKey`. Items of a `keyedSection` list reuse the stored section of the same id.
+- **Missing values**: a missing key reads as `null`, and a missing required list as an empty list. For optional
+  `string`, `text`, `enum` and `material` fields, `""` in the file reads as `null` and `null` is written as `""`, so
+  `webhook-url: ""` keeps its line and comment. Clearing any other optional field removes its key.
+- **Validates** what YAML cannot store unchanged: text with control characters (see below) and `keyedSection` ids
+  containing `.`.
+
+`SectionMapper` is immutable and thread-safe; a `YamlConfiguration` is not, so parse a new one in each callback as
+above. The demo additionally parses the new bytes again and checks that they read back to the proposed values before
+it writes them ([apply()](/providers/apply)).
+
+## Text that YAML cannot store
+
+Bukkit's `YamlConfiguration` (SnakeYAML) saves a string that contains a control character, such as an escape code
+pasted from a terminal (U+001B), a bell (U+0007), DEL (U+007F), a C1 control (U+0080 to U+009F other than U+0085, for
+example U+0092 from mis-decoded text), U+FFFE or U+FFFF, as `!!binary` data instead of text. Reading the file back
+then returns a `byte[]`, not the string, so your plugin can no longer load the value. U+0085 (next line) is read back
+as a line feed. Tab, line feed, carriage return and all other characters are stored unchanged.
+
+`SectionMapper.validate(values)` reports such text as an error at its path, for text fields and string list items.
+It accepts tab, line feed, carriage return, U+0020 to U+007E, U+00A0 to U+D7FF, U+E000 to U+FFFD and U+10000 and
+above. The demo merges it with its own rules, as shown in [validate()](/providers/validate), and also checks it in
+`apply`.
+
+If you read YAML yourself, never turn an unexpected value into text with `String.valueOf` in `read()`: a `byte[]`
+becomes `[B@2dafd777`, and the next apply writes that back as the real value. `SectionMapper.read` throws for
+`byte[]` and section values instead, so the editor reports that the file cannot be read and the server log names the
+path.
+
+## One layout
+
+`SectionMapper` maps one layout. The schema must mirror the file: fields under their own keys, groups as nested
+sections, object lists as YAML lists or as sections keyed by item key. Files with other layouts (renamed keys, values
+split across sections, lists of single values standing for objects) need a mapping of their own.
+
+Bukkit's YAML library keeps comments of keys in sections but not of list items, and is not tested to preserve
+formatting exactly. `SectionMapper` leaves unchanged values untouched.

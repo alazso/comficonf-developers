@@ -1,0 +1,38 @@
+---
+title: Compatibility
+description: Supported servers and Java, the API version, and how a plugin works with older or newer bridges.
+---
+
+| Item | Version |
+| --- | --- |
+| Server | Paper 26.1.2, 26.2 or 26.3 (and Purpur builds based on them). Folia is not supported yet. |
+| Java | 25 |
+| API artifact | `com.comficonf:comficonf-api:COMFICONF_ARTIFACT_VERSION`, API version 1 (`ComfiConfApi.API_VERSION`) |
+| Runtime | `ComfiConf-Bridge-COMFICONF_ARTIFACT_VERSION.jar` installed on the server. Without it your plugin must still work. |
+
+## API version and artifact version
+
+- The **artifact version** is the Maven version of `com.comficonf:comficonf-api`, currently
+  `COMFICONF_ARTIFACT_VERSION`. The bridge, the API and the demo plugin share one version number.
+- The **API version** is `ComfiConfApi.API_VERSION`, a fixed integer (1). It is not the artifact version.
+
+A plugin compiled against a newer API compares `ComfiConfApi.get().apiVersion()` with `ComfiConfApi.API_VERSION`
+before calling newer methods. `bridgeVersion()` returns the version of the running bridge.
+
+## With an older bridge
+
+If the installed bridge does not contain the API classes your plugin was compiled against, loading your integration
+fails with `NoClassDefFoundError`. Catch `LinkageError` around the registration, as in the
+[optional hook pattern](/quickstart#3-keep-the-integration-optional), log which ComfiConf version is installed, and
+keep running without ComfiConf until the owner updates the bridge.
+
+## Without the bridge
+
+Your plugin must start and work when the bridge is not installed. Keep every API type out of the main class and
+other classes loaded at startup, check `isPluginEnabled("ComfiConf")` first, and guard it with a bytecode test; see
+[Testing](/testing#guard-the-optional-hook).
+
+## Minecraft versions
+
+The bridge is listed for the Minecraft versions it was tested on: 26.1.2, 26.2 and 26.3. Paper and Purpur builds
+based on them are supported. Folia is not.

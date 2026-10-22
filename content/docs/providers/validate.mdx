@@ -1,0 +1,82 @@
+---
+title: validate()
+description: What the bridge checks before your validate runs, and how to report cross-field rules as errors and warnings.
+---
+
+`validate(proposed)` is called with the complete proposed values **after** the bridge has checked them against the
+schema (types, ranges, patterns, choices, required values, list sizes, duplicate keys and so on). Only check rules
+the schema cannot express, typically cross-field rules. Errors block the change; warnings are shown but never block.
+
+```java title="VoucherConfigProvider.java"
+@Override
+public ValidationResult validate(ConfigValues proposed) {
+    ValidationResult.Builder result = ValidationResult.builder();
+    if (proposed.getString("settings.prefix", "").indexOf('§') >= 0) {
+        result.error("settings.prefix", "Use MiniMessage tags such as <gold> instead of § color codes.");
+    }
+    List<ConfigValues> vouchers = proposed.getObjectList("vouchers");
+    boolean anyEnabled = false;
+    for (int i = 0; i < vouchers.size(); i++) {
+        ConfigValues voucher = vouchers.get(i);
+        boolean enabled = voucher.getBoolean("enabled", false);
+        anyEnabled |= enabled;
+        if (enabled && voucher.getLong("cooldown-seconds", 0) < 60) {
+            result.warning("vouchers[" + i + "].cooldown-seconds",
+                    "A cooldown under 60 seconds lets players redeem this voucher almost continuously.");
+        }
+        if (!voucher.getString("permission", "").startsWith("vouchers.")) {
+            result.warning("vouchers[" + i + "].permission",
+                    "Permissions usually start with 'vouchers.' so they can be granted together.");
+        }
+    }
+    if (!anyEnabled) {
+        result.error("vouchers", "At least one voucher must be enabled.");
+    }
+    // Text that config.yml cannot store first, see "Text that YAML cannot store" below.
+    return mapper.validate(proposed).merge(result.build());
+}
+```
+
+Issue paths use the syntax of [Values and paths](/concepts/values-and-paths); `""` addresses the whole resource.
+Messages are shown to the server owner (at most 500 characters). `ValidationIssue` also accepts your own
+machine-readable code (`[a-z0-9_]{1,64}`); the builder methods use the code `plugin`.
+
+| Call | Result |
+| --- | --- |
+| `ValidationResult.ok()` | No issues |
+| `ValidationResult.error(path, message)` | One error |
+| `ValidationResult.of(issues)` | The given `ValidationIssue`s |
+| `ValidationResult.builder()` | `error(path, message)`, `warning(path, message)`, `issue(ValidationIssue)`, `build()` |
+| `result.merge(other)` | Both results' issues |
+| `result.isValid()` | Whether there is no error |
+
+The demo merges `SectionMapper.validate(values)`, which reports text that `config.yml` cannot store, with its own
+rules; see [Text that YAML cannot store](/persistence/section-mapper#text-that-yaml-cannot-store).
+
+## What the bridge checks for you
+
+Before your `validate` runs, the bridge converts the submitted JSON and checks it against your schema. All problems
+are collected and reported as errors with these codes:
+
+| Code | Rule |
+| --- | --- |
+| `unknown_field` | A key the schema does not declare, at any depth. |
+| `invalid_type` | Wrong JSON type. Integers accept numbers without a fractional part (`5.0` becomes `5`) within ±9007199254740991; decimals accept any finite number. Text containing an unpaired UTF-16 surrogate (for example the JSON escape `"\ud800"`) is rejected too, because it cannot be encoded as UTF-8. |
+| `required` | Missing or `null` required value; empty required `string`, `text`, `enum` or `material`. |
+| `min`, `max` | Number outside the inclusive range. |
+| `min_length`, `max_length` | Length in code points outside the range (per item for string lists). |
+| `pattern` | No full match; the message is your `patternMessage` when set. |
+| `invalid_choice` | Enum value or string list item that is not a choice. |
+| `min_items`, `max_items` | List size outside the range. |
+| `duplicate_item` | Repeated item in a `uniqueItems` string list, reported at the repeat. |
+| `duplicate_key` | Repeated `itemKey` value, reported at `list[i].<itemKey>` of the repeat. |
+| `unknown_material`, `material_filter` | Material missing on the server, or not matching `itemsOnly()` / `blocksOnly()`. |
+| `read_only` | A read-only value differs from the current value (items added to an object list have none to compare with). |
+| `not_writable` | A value was submitted for a `sensitive` field that is not `writeOnly`. |
+| `no_changes` | Apply only: the proposal equals the current values. |
+
+Consequently your `validate` and `apply` receive values that contain exactly your declared fields, with the declared
+types (`Long`, `Double`, `String`, `Boolean`, lists and maps), satisfying every declared constraint. Optional fields
+without a value are present as `null`. You never need to re-check types or ranges. The only exception: stored values
+of sensitive fields that the submission left out are passed through as `read()` returned them (see
+[Sensitive fields](/schema/sensitive-fields)).

@@ -1,0 +1,37 @@
+---
+title: Visibility conditions
+description: Show a field only while a sibling field has a certain value, with visibleWhen and VisibilityCondition.
+---
+
+`visibleWhen(field, value)` or `visibleWhen(VisibilityCondition)` shows a field only while a sibling scalar,
+non-sensitive field matches. Without it, a field is always visible.
+
+```java title="VoucherSchema.java"
+ConfigField.stringList("announcement-channels")
+        .choice("chat", "Chat").choice("actionbar", "Action bar").choice("title", "Title")
+        .uniqueItems().minItems(1).ordered(false)
+        .visibleWhen("announce-redemptions", true),
+```
+
+## Conditions
+
+`visibleWhen(field, value)` shows the field while the sibling field `field` equals `value`. The static factories of
+`VisibilityCondition` cover every comparison, with at least one value each:
+
+| Factory | Visible while the sibling's value |
+| --- | --- |
+| `VisibilityCondition.whenEquals(field, value)` | equals `value` |
+| `VisibilityCondition.whenNotEquals(field, value)` | does not equal `value` |
+| `VisibilityCondition.whenIn(field, values...)` | is one of `values` |
+| `VisibilityCondition.whenNotIn(field, values...)` | is none of `values` |
+
+## Rules
+
+- The compared field is a sibling field. It must be scalar and not sensitive.
+- Compared values are strings, booleans or numbers; anything else throws `SchemaException`.
+- The compared values must have the sibling's value type: a `double` such as `1.0` for a `decimal` sibling (`1`
+  throws `SchemaException`), and a `long` within ±9007199254740991 for an `integer` sibling.
+- Hidden fields keep their values and are still validated.
+
+In the editor, a visible conditional field explains why it is shown, and a problem in a hidden field names the
+setting to change to reveal it.

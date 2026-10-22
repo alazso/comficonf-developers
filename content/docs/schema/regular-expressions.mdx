@@ -1,0 +1,42 @@
+---
+title: Regular expressions
+description: How pattern and itemPattern match, which constructs the editor checks while typing, and the limits.
+---
+
+`pattern(regex)`, `pattern(regex, message)` on `string` and `text` fields and `itemPattern(regex, message)` on
+`stringList` fields require the whole value to match.
+
+```java title="VoucherSchema.java"
+ConfigField.string("id").pattern("[a-z0-9_-]{1,32}"),
+ConfigField.string("webhook-url").label("Webhook URL").optional().writeOnly()
+        .pattern("https://.+", "Use an https:// URL.")),
+ConfigField.stringList("disabled-worlds")
+        .itemPattern("[A-Za-z0-9_.-]{1,64}", "World names use letters, digits, '_', '-' and '.'."),
+```
+
+## How a pattern matches
+
+- Patterns use `java.util.regex` with default flags and `Matcher.matches()`: the whole value must match, so you need
+  no `^` or `$`.
+- With default flags `\s` and POSIX classes such as `\p{Alpha}` are ASCII only, and `.` matches one code point except
+  line terminators.
+- The message is shown on mismatch; the error code is `pattern`.
+
+## Checked while typing, or at review
+
+The editor repeats the check while typing only when the pattern has an exact JavaScript translation. Constructs
+without one are checked by the bridge only, when the owner reviews:
+
+- inline flags,
+- class intersections,
+- possessive or atomic quantifiers,
+- `\Z`, `\G`, `\R`.
+
+Such patterns are accepted in schemas; the owner just learns about a mismatch one step later.
+
+## Limits
+
+| Item | Limit |
+| --- | --- |
+| Pattern | at most 1000 characters |
+| Message | at most 300 characters |

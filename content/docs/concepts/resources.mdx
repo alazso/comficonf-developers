@@ -1,0 +1,48 @@
+---
+title: Resources
+description: A resource is one editable unit, usually one configuration file, registered with a stable id.
+---
+
+A **resource** is one editable unit, usually one configuration file. Your plugin registers it with the bridge as a
+`ConfigResource`: a stable id, a display name, an optional description and a `ConfigProvider` with four callbacks.
+The editor shows each resource as a settings page of your plugin.
+
+```java title="ComfiConfIntegration.java"
+ConfigResource resource = ConfigResource.builder("comficonf-demo:vouchers")
+        .displayName("Vouchers")
+        .description("Voucher rewards, cooldowns and announcements of ComfiConfDemo.")
+        .provider(new VoucherConfigProvider(configFile, backupDirectory, runtime, adminNotifier,
+                plugin.getLogger()))
+        .callbackThread(CallbackThread.WORKER)
+        .build();
+```
+
+## The id
+
+The id has the form `namespace:name`, each part 1 to 64 characters of `[a-z0-9._-]` starting with a letter or
+digit. **Keep the id stable across plugin versions**: the website and the audit history refer to it. Keep ids
+unique, for example prefixed with your plugin name; registering an id that is already registered, by any plugin,
+throws `IllegalArgumentException`.
+
+## Display name and description
+
+| Builder method | Meaning |
+| --- | --- |
+| `displayName(String)` | Name in the editor, at most 80 characters. Defaults to the name part of the id. |
+| `description(String)` | Short description, at most 500 characters. |
+| `provider(ConfigProvider)` | Required. The callbacks. |
+| `callbackThread(CallbackThread)` | `WORKER` (default) or `MAIN`; see [Threading](/providers/threading). |
+
+## One resource per file
+
+You can register several resources, for example one per configuration file. Each one is described, read,
+validated and applied on its own; the bridge never overlaps two callbacks of the same resource.
+
+## Lifecycle
+
+- Register in `onEnable`, after `isPluginEnabled("ComfiConf")` returned `true`; see the
+  [optional hook pattern](/quickstart#3-keep-the-integration-optional).
+- Call `registration.notifyChanged()` when your values change outside ComfiConf.
+- Unregister in `onDisable` with `registration.unregister()` or `close()`.
+
+[Registration](/providers/registration) documents every call.
