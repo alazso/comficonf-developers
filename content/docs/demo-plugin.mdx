@@ -4,8 +4,8 @@ description: ComfiConfDemo, the reference integration, explained file by file.
 ---
 
 ComfiConfDemo is a voucher plugin that works on its own and exposes its configuration to ComfiConf when the bridge is
-installed. It lives in `examples/demo-plugin` of the <ReleaseLink to="apiRepository">ComfiConf API
-repository</ReleaseLink>, and its JAR, `ComfiConfDemo-COMFICONF_ARTIFACT_VERSION.jar`, is attached to the
+installed. It will be published in `examples/demo-plugin` of the <ReleaseLink to="apiRepository">ComfiConf API
+repository</ReleaseLink>, with its JAR, `ComfiConfDemo-COMFICONF_ARTIFACT_VERSION.jar`, attached to the
 <ReleaseLink to="githubRelease">GitHub release</ReleaseLink>. Every page of this site quotes it.
 
 ## Layout
@@ -84,8 +84,8 @@ The excerpt shows a part of the file; the demo's `config.yml` has every setting 
 
 | Command | Permission |
 | --- | --- |
-| `/vouchers`, `/vouchers info <id>`, `/vouchers settings`, `/vouchers redeem <id> <player>`, `/vouchers status` | `comficonf.demo.use` (default: everyone) |
-| `/vouchers reload` | `comficonf.demo.admin` (default: operators), who also receive configuration change notices |
+| `/vouchers`, `/vouchers info <id>`, `/vouchers settings`, `/vouchers status`, and `/vouchers redeem <id> <player>` for yourself | `comficonf.demo.use` (default: everyone) |
+| `/vouchers redeem <id> <player>` for another player, and `/vouchers reload` | `comficonf.demo.admin` (default: operators), who also receive configuration change notices |
 
 ## Tests
 
