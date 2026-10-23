@@ -27,7 +27,7 @@ export type ReleaseLinkKey =
   | 'javadoc';
 
 /**
- * Release locations that do not exist yet. A `null` entry renders as plain text and is skipped by the link check
+ * Release locations. A `null` entry is not published yet: it renders as plain text and is skipped by the link check
  * (`scripts/check-links.mjs`); set the URL once the page is published.
  */
 export const releaseLinks: Record<ReleaseLinkKey, string | null> = {
@@ -36,13 +36,13 @@ export const releaseLinks: Record<ReleaseLinkKey, string | null> = {
   /** Hangar project page of the bridge. */
   hangar: null,
   /** Public repository with the developer API, the demo plugin and the developer guide. */
-  apiRepository: null,
+  apiRepository: 'https://github.com/alazso/comficonf-api',
   /** GitHub release of the public API repository with the API JAR, the demo plugin JAR and SHA256SUMS. */
   githubRelease: null,
-  /** The artifact on Maven Central: https://central.sonatype.com/artifact/com.comficonf/comficonf-api */
-  mavenCentral: null,
-  /** Javadoc of the published artifact: https://javadoc.io/doc/com.comficonf/comficonf-api */
-  javadoc: null,
+  /** The artifact on Maven Central. */
+  mavenCentral: 'https://central.sonatype.com/artifact/com.comficonf/comficonf-api',
+  /** Javadoc of the published artifact. */
+  javadoc: 'https://javadoc.io/doc/com.comficonf/comficonf-api',
 };
 
 /** Routes of the generated files. */

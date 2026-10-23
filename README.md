@@ -106,9 +106,9 @@ When the guide changes:
 `lib/shared.ts` holds the site origin, the app and sibling site addresses, the GitHub repository used for commit
 links, and `releaseLinks`: the bridge's Modrinth and Hangar pages, the public API repository and its GitHub
 release, the artifact on Maven Central, and the Javadoc at https://javadoc.io/doc/com.comficonf/comficonf-api. A
-release link set to `null` renders its text without a link and is skipped by the link check. Set each URL once the
-page is published; set `mavenCentral` and `javadoc` when the API reaches Maven Central, and update the
-**Not on Maven Central yet** callout of the Quickstart then.
+release link set to `null` renders its text without a link and is skipped by the link check. The API repository,
+Maven Central and the Javadoc are set; the Modrinth and Hangar pages and the GitHub release are not published yet.
+Set each URL once its page exists.
 
 ## Design
 

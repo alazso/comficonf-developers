@@ -24,17 +24,9 @@ contains exactly one copy of `com.comficonf.api`. Your plugin compiles against t
 shaded copy creates a second set of API classes that the bridge cannot see; see
 [Troubleshooting](/troubleshooting#comficonfapiget-throws-not-installed-or-not-enabled-although-the-bridge-runs-or-a-classcastexception-mentions-comficonfapi).
 
-<Callout tone="warning" title="Not on Maven Central yet">
-  Until the API is published to a public repository, install it into your local Maven repository from a checkout
-  of the <ReleaseLink to="apiRepository">ComfiConf API repository</ReleaseLink>. This installs
-  `com.comficonf:comficonf-api:COMFICONF_ARTIFACT_VERSION` (with sources and Javadoc) into `~/.m2/repository`, which
-  is why the Gradle example lists `mavenLocal()`.
-</Callout>
-
-```sh title="Terminal"
-cd java
-./gradlew :api:publishToMavenLocal
-```
+The API is on <ReleaseLink to="mavenCentral">Maven Central</ReleaseLink> as `com.comficonf:comficonf-api`, with its
+sources and Javadoc, so no extra repository is needed for it. The Javadoc is also on
+<ReleaseLink to="javadoc">javadoc.io</ReleaseLink>.
 
 ```kotlin tab="Gradle (Kotlin DSL)" title="build.gradle.kts"
 plugins {
@@ -42,7 +34,6 @@ plugins {
 }
 
 repositories {
-    mavenLocal()
     mavenCentral()
     maven("https://repo.papermc.io/repository/maven-public/")
 }
@@ -90,8 +81,8 @@ java {
 - **Gradle:** if you use the Shadow plugin for other libraries, keep ComfiConf out of it: a `compileOnly`
   dependency is never part of the shadow JAR. Do not move the API to `implementation` "to make it work"; that is
   the shading mistake.
-- **Maven:** Maven reads `~/.m2/repository` by default, so `publishToMavenLocal` is enough. If you use the
-  `maven-shade-plugin`, `provided` dependencies are not included.
+- **Maven:** Maven resolves the API from Maven Central, its default repository; only Paper needs the `papermc`
+  repository. If you use the `maven-shade-plugin`, `provided` dependencies are not included.
 
 ## 2. Declare the soft dependency
 
