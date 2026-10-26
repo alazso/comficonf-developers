@@ -34,8 +34,7 @@ Pages are MDX files in `content/docs`. The sidebar order comes from `meta.json` 
 a `title` and a `description` in its front matter.
 
 The developer guide of the ComfiConf API repository (`docs/DEVELOPER_GUIDE.md`) is the canonical text, and the
-Javadoc of the API is normative. This site splits the guide into pages with the same facts and the same code; it
-adds nothing about the bridge's protocol, the backend or the service's internals beyond what the guide says.
+Javadoc of the API is normative. This site splits the guide into pages with the same facts and the same code.
 
 - **Every code block has a title**: a file name (`title="VoucherSchema.java"`), or tabs for build files
   (`tab="Gradle (Kotlin DSL)"` and `tab="Maven"` on consecutive blocks, each with its own `title`). Fumadocs adds
@@ -43,7 +42,6 @@ adds nothing about the bridge's protocol, the backend or the service's internals
 - **Builder methods and callback rules are ruled tables**, not prose lists.
 - **API names** (classes, methods, enum constants, config keys) are inline code and must exist in the API exactly
   as written.
-- **No em or en dashes** anywhere, including front matter. Use commas, colons, parentheses or periods.
 - `COMFICONF_ARTIFACT_VERSION` anywhere in content (text, code, component props) is replaced at build time by the
   Maven artifact version; see [Version stamping](#version-stamping).
 
@@ -106,9 +104,7 @@ When the guide changes:
 `lib/shared.ts` holds the site origin, the app and sibling site addresses, the GitHub repository used for commit
 links, and `releaseLinks`: the bridge's Modrinth and Hangar pages, the public API repository and its GitHub
 release, the artifact on Maven Central, and the Javadoc at https://javadoc.io/doc/com.comficonf/comficonf-api. A
-release link set to `null` renders its text without a link and is skipped by the link check. The API repository,
-Maven Central and the Javadoc are set; the Modrinth and Hangar pages and the GitHub release are not published yet.
-Set each URL once its page exists.
+release link set to `null` renders its text without a link and is skipped by the link check.
 
 ## Design
 
@@ -120,16 +116,7 @@ a step darker than the content surface. The additions of the documentation sites
 Syntax colors come from a Shiki CSS variables theme (`source.config.ts`) and the `--shiki-*` properties.
 
 The stylesheet keeps Ledger's rules: no `backdrop-filter`, radii of 3, 4 and 6px, and `--shadow-lg` as the only
-shadow. Check them in a production build:
-
-```bash
-grep -oh 'backdrop-filter[^;}]*\|9999px\|box-shadow:[^;}]*' .next/static/chunks/*.css | sort | uniq -c
-```
-
-The expected hits are `box-shadow: var(--shadow-lg)`, `box-shadow: none`, Tailwind's composite `box-shadow` of the
-`.shadow-lg` utility (its `--tw-shadow` is the `--shadow-lg` value, and global.css sets the utility to
-`var(--shadow-lg)`), and the typography plugin's `kbd` shadow, which global.css replaces with `box-shadow: none`.
-Nothing else, and no `backdrop-filter` at all.
+shadow.
 
 ## Version stamping
 
@@ -138,8 +125,8 @@ Nothing else, and no `backdrop-filter` at all.
   visible on the page.
 - `COMFICONF_ARTIFACT_VERSION` in content is replaced by the build argument of the same name. The deploy workflow
   reads `<release>` from
-  https://repo1.maven.org/maven2/com/comficonf/comficonf-api/maven-metadata.xml and falls back to `0.1.0` while
-  the artifact is not published.
+  https://repo1.maven.org/maven2/com/comficonf/comficonf-api/maven-metadata.xml and falls back to `0.1.0` when
+  the metadata cannot be read. A build without the argument uses `0.1.0`.
 
 ## Checking links
 
@@ -151,8 +138,7 @@ node scripts/check-links.mjs http://localhost:3102 --map https://docs.comficonf.
 
 The script reads the pages from `sitemap.xml`, follows every link on them, checks in-page anchors, maps the
 sibling site to its local server, and requests external links such as app.comficonf.com. Unset release links
-render no link, so they are not checked. Links to this repository on GitHub (the commit in the footer, the
-**Open** menu) answer only once the repository exists.
+render no link, so they are not checked.
 
 ## Deployment
 
@@ -164,16 +150,7 @@ the `node` user.
 Run the image behind a reverse proxy and publish its port 3000 on localhost only. Updating means pulling
 `ghcr.io/alazso/comficonf-developers:latest` again and recreating the container.
 
-### Notes
-
-- **GHCR packages are private by default.** The server cannot pull the image until the package is made public
-  (on GitHub: the package, **Package settings**, **Change visibility**) or the host runs `docker login ghcr.io`
-  with a token that has the `read:packages` scope.
-- **Scheduled workflows.** GitHub disables scheduled workflows in a public repository after 60 days without
-  repository activity. The deploy workflow has no schedule, so it is not affected. If a schedule is added later and
-  the workflow shows as disabled under **Actions**, choose **Enable workflow**. If a push does not start a deploy,
-  run the workflow with `workflow_dispatch`.
-- **Check a deploy** by the footer: it names the commit the running image was built from.
+Check a deploy by the footer: it names the commit the running image was built from.
 
 ## Fonts
 

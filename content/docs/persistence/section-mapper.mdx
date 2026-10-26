@@ -139,5 +139,5 @@ path.
 sections, object lists as YAML lists or as sections keyed by item key. Files with other layouts (renamed keys, values
 split across sections, lists of single values standing for objects) need a mapping of their own.
 
-Bukkit's YAML library keeps comments of keys in sections but not of list items, and is not tested to preserve
-formatting exactly. `SectionMapper` leaves unchanged values untouched.
+Bukkit's YAML library keeps comments of keys in sections but not of list items, and does not guarantee that a
+file's formatting is kept exactly. `SectionMapper` leaves unchanged values untouched.

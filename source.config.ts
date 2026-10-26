@@ -4,7 +4,7 @@ import { createCssVariablesTheme } from 'shiki';
 
 // Maven artifact version of com.comficonf:comficonf-api injected into content at build time. The deploy workflow
 // sets COMFICONF_ARTIFACT_VERSION from the <release> of the artifact's maven-metadata.xml on Maven Central, or
-// 0.1.0 while the artifact is not published.
+// 0.1.0 when the metadata cannot be read. A build without the variable uses 0.1.0.
 const ARTIFACT_VERSION = process.env.COMFICONF_ARTIFACT_VERSION || '0.1.0';
 const TOKEN = 'COMFICONF_ARTIFACT_VERSION';
 

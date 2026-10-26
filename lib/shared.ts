@@ -27,11 +27,11 @@ export type ReleaseLinkKey =
   | 'javadoc';
 
 /**
- * Release locations. A `null` entry is not published yet: it renders as plain text and is skipped by the link check
- * (`scripts/check-links.mjs`); set the URL once the page is published.
+ * Release locations. A `null` entry has no published page: it renders as plain text and is skipped by the link
+ * check (`scripts/check-links.mjs`).
  */
 export const releaseLinks: Record<ReleaseLinkKey, string | null> = {
-  /** Modrinth project page of the bridge, slug `comficonf`: https://modrinth.com/plugin/comficonf */
+  /** Modrinth project page of the bridge. */
   modrinth: null,
   /** Hangar project page of the bridge. */
   hangar: null,

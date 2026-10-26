@@ -97,9 +97,7 @@ effect, not as a failed apply, if the values are already active (the demo logs i
 
 ## The bridge does not connect
 
-Run `/comficonf status`. The bridge connects to ComfiConf at `wss://app.comficonf.com/api/v1/bridge`. For a local or
-self-hosted backend, add `backend-url` and `web-url` to `plugins/ComfiConf/config.yml`. `ws://` is accepted only for
-`localhost`, `127.0.0.1` and `::1` unless `allow-insecure-connections: true`; production uses `wss://`. After editing
+Run `/comficonf status`. The bridge connects to ComfiConf at `wss://app.comficonf.com/api/v1/bridge`. After editing
 `plugins/ComfiConf/config.yml`, run `/comficonf reconnect`. While the backend is unreachable the bridge keeps retrying
 with backoff (up to one minute) and logs a warning only when the error changes or every ten minutes.
 
